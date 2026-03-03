@@ -1,5 +1,6 @@
 import fluxer
 from fluxer import Cog
+from fluxer.checks import has_permission
 from typing import Any
 
 from utils.mongodb import get_database
@@ -33,6 +34,7 @@ class WarnSystemCog(Cog):
         return None
 
     @Cog.command(name="warnings")
+    @has_permission(fluxer.Permissions.MANAGE_MESSAGES)
     async def warnings(self, ctx, member: Any):
         """Retrieve and display all warnings for a user."""
         guild_id = ctx.guild_id
@@ -68,6 +70,7 @@ class WarnSystemCog(Cog):
             )
 
     @Cog.command(name="warn")
+    @has_permission(fluxer.Permissions.MANAGE_MESSAGES)
     async def warn(self, ctx, member: Any, *, reason: str = "No reason provided"):
         """Warn a user and log the warning in the database."""
         guild_id = ctx.guild_id
@@ -97,6 +100,7 @@ class WarnSystemCog(Cog):
         )
 
     @Cog.command(name="delwarn")
+    @has_permission(fluxer.Permissions.MANAGE_MESSAGES) 
     async def delwarn(self, ctx, member: Any, index: int):
         """Delete a specific warning for a user."""
         guild_id = ctx.guild_id
