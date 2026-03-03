@@ -18,6 +18,7 @@ class AutoModCog(Cog):
     """AutoMod management commands and event handlers"""
 
     def __init__(self, bot: fluxer.Bot):
+        super().__init__(bot)
         self.bot = bot
         self.manager = AutoModManager()
         self.engine = AutoModEngine()
@@ -81,7 +82,7 @@ class AutoModCog(Cog):
         # Send log message
         if settings.log_channel_id:
             try:
-                log_channel = await self.bot.fetch_channel(settings.log_channel_id)
+                log_channel = await self.bot.fetch_channel(str(settings.log_channel_id))
                 message_text = self.engine.format_message(
                     action.type, rule.name, event.reason or "Rule triggered"
                 )
@@ -89,7 +90,7 @@ class AutoModCog(Cog):
                 embed = fluxer.Embed(
                     title="AutoMod Action Taken",
                     description=message_text,
-                    color=fluxer.Color.brand_red(),
+                    color=0xFF0000,
                 )
                 embed.add_field(name="User", value=f"<@{event.user_id}>", inline=True)
                 embed.add_field(name="Severity", value="🔴" * rule.severity, inline=True)
@@ -102,7 +103,8 @@ class AutoModCog(Cog):
         # Send warning to user if configured
         if action.custom_message:
             try:
-                await message.author.send(action.custom_message)
+                if message.channel:
+                    await message.channel.send(f"{message.author.mention} {action.custom_message}")
             except:
                 pass
 
