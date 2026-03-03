@@ -3,12 +3,10 @@ AutoMod Manager - Handles storage and retrieval of AutoMod settings
 Abstracted to support database migration and dashboard integration
 """
 
-import json
-import os
 import asyncio
-from pathlib import Path
 from typing import Dict, Optional, List
 from .automod_models import GuildAutoModSettings, AutoModPreset, AutoModEvent, AutoModRule, ActionType, RuleType, ExemptEntity, AutoModAction
+from .mongodb import get_database
 
 
 class AutoModManager:
@@ -18,17 +16,32 @@ class AutoModManager:
     """
 
     def __init__(self, data_dir: str = "data/automod"):
-        self.data_dir = Path(data_dir)
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-        self.guild_settings_dir = self.data_dir / "guilds"
-        self.guild_settings_dir.mkdir(exist_ok=True)
-        self.presets_file = self.data_dir / "presets.json"
-        self.events_file = self.data_dir / "events.json"
+        self.data_dir = data_dir
         self._lock = asyncio.Lock()
+        self.db = get_database()
+        self.guild_settings_collection = self.db["automod_guild_settings"]
+        self.presets_collection = self.db["automod_presets"]
+        self.events_collection = self.db["automod_events"]
+        self._presets_initialized = False
 
-        # Initialize presets if they don't exist
-        if not self.presets_file.exists():
-            asyncio.create_task(self._init_default_presets())
+        self.guild_settings_collection.create_index("guild_id", unique=True)
+        self.presets_collection.create_index("id", unique=True)
+        self.events_collection.create_index([("guild_id", 1), ("timestamp", -1)])
+        self.events_collection.create_index([("guild_id", 1), ("rule_id", 1), ("timestamp", -1)])
+
+    async def _ensure_default_presets(self) -> None:
+        """Ensure default presets exist in MongoDB"""
+        if self._presets_initialized:
+            return
+
+        async with self._lock:
+            if self._presets_initialized:
+                return
+
+            if self.presets_collection.count_documents({}) == 0:
+                await self._init_default_presets()
+
+            self._presets_initialized = True
 
     async def _init_default_presets(self) -> None:
         """Initialize default presets"""
@@ -109,41 +122,28 @@ class AutoModManager:
 
     async def get_guild_settings(self, guild_id: int) -> GuildAutoModSettings:
         """Get settings for a guild, create default if not exists"""
-        async with self._lock:
-            settings_file = self.guild_settings_dir / f"{guild_id}.json"
-            if settings_file.exists():
-                with open(settings_file, "r") as f:
-                    data = json.load(f)
-                    return GuildAutoModSettings.from_dict(data)
-            # Return default settings for new guild
-            return GuildAutoModSettings(guild_id=guild_id)
+        data = self.guild_settings_collection.find_one({"guild_id": guild_id}, {"_id": 0})
+        if data:
+            return GuildAutoModSettings.from_dict(data)
+        return GuildAutoModSettings(guild_id=guild_id)
 
     async def save_guild_settings(self, settings: GuildAutoModSettings) -> None:
         """Save guild settings"""
-        async with self._lock:
-            settings_file = self.guild_settings_dir / f"{settings.guild_id}.json"
-            with open(settings_file, "w") as f:
-                json.dump(settings.to_dict(), f, indent=2)
+        self.guild_settings_collection.replace_one(
+            {"guild_id": settings.guild_id},
+            settings.to_dict(),
+            upsert=True,
+        )
 
     async def delete_guild_settings(self, guild_id: int) -> bool:
         """Delete all settings for a guild"""
-        async with self._lock:
-            settings_file = self.guild_settings_dir / f"{guild_id}.json"
-            if settings_file.exists():
-                settings_file.unlink()
-                return True
-            return False
+        result = self.guild_settings_collection.delete_one({"guild_id": guild_id})
+        return result.deleted_count > 0
 
     async def list_guild_settings(self) -> List[int]:
         """List all configured guild IDs"""
-        guild_ids = []
-        for file in self.guild_settings_dir.glob("*.json"):
-            try:
-                guild_id = int(file.stem)
-                guild_ids.append(guild_id)
-            except ValueError:
-                pass
-        return guild_ids
+        cursor = self.guild_settings_collection.find({}, {"guild_id": 1, "_id": 0})
+        return [doc["guild_id"] for doc in cursor if "guild_id" in doc]
 
     # --- Rule Operations ---
 
@@ -241,15 +241,12 @@ class AutoModManager:
 
     async def get_presets(self) -> Dict[str, AutoModPreset]:
         """Get all available presets"""
-        async with self._lock:
-            if not self.presets_file.exists():
-                return {}
-            with open(self.presets_file, "r") as f:
-                data = json.load(f)
-                return {
-                    preset_id: AutoModPreset.from_dict(preset_data)
-                    for preset_id, preset_data in data.items()
-                }
+        await self._ensure_default_presets()
+        presets: Dict[str, AutoModPreset] = {}
+        for doc in self.presets_collection.find({}, {"_id": 0}):
+            preset = AutoModPreset.from_dict(doc)
+            presets[preset.id] = preset
+        return presets
 
     async def get_preset(self, preset_id: str) -> Optional[AutoModPreset]:
         """Get a specific preset"""
@@ -258,13 +255,10 @@ class AutoModManager:
 
     async def save_presets(self, presets: Dict[str, AutoModPreset]) -> None:
         """Save presets"""
-        async with self._lock:
-            data = {
-                preset_id: preset.to_dict()
-                for preset_id, preset in presets.items()
-            }
-            with open(self.presets_file, "w") as f:
-                json.dump(data, f, indent=2)
+        docs = [preset.to_dict() for preset in presets.values()]
+        self.presets_collection.delete_many({})
+        if docs:
+            self.presets_collection.insert_many(docs)
 
     async def apply_preset(self, guild_id: int, preset_id: str) -> bool:
         """Apply a preset to a guild"""
@@ -312,38 +306,43 @@ class AutoModManager:
     async def log_event(self, event: AutoModEvent) -> None:
         """Log an AutoMod event"""
         async with self._lock:
-            events = []
-            if self.events_file.exists():
-                with open(self.events_file, "r") as f:
-                    events = json.load(f)
-            
-            events.append(event.to_dict())
-            
-            # Keep only last 10000 events per guild to prevent file bloat
+            self.events_collection.insert_one(event.to_dict())
+
+            # Keep only last 50000 events to prevent collection bloat
             max_events = 50000
-            if len(events) > max_events:
-                events = events[-max_events:]
-            
-            with open(self.events_file, "w") as f:
-                json.dump(events, f)
+            total_events = self.events_collection.count_documents({})
+            if total_events > max_events:
+                overflow = total_events - max_events
+                oldest_docs = list(
+                    self.events_collection.find({}, {"_id": 1})
+                    .sort([("timestamp", 1), ("_id", 1)])
+                    .limit(overflow)
+                )
+                if oldest_docs:
+                    self.events_collection.delete_many(
+                        {"_id": {"$in": [doc["_id"] for doc in oldest_docs]}}
+                    )
 
     async def get_events(self, guild_id: Optional[int] = None, limit: int = 100) -> List[AutoModEvent]:
         """Get logged events, optionally filtered by guild"""
-        async with self._lock:
-            if not self.events_file.exists():
-                return []
-            
-            with open(self.events_file, "r") as f:
-                events_data = json.load(f)
-            
-            events = [AutoModEvent.from_dict(e) for e in events_data]
-            
-            if guild_id:
-                events = [e for e in events if e.guild_id == guild_id]
-            
-            return events[-limit:]
+        query = {"guild_id": guild_id} if guild_id is not None else {}
+        events_data = list(
+            self.events_collection.find(query, {"_id": 0})
+            .sort("timestamp", -1)
+            .limit(limit)
+        )
+        events_data.reverse()
+        return [AutoModEvent.from_dict(e) for e in events_data]
 
     async def get_events_for_rule(self, guild_id: int, rule_id: str, limit: int = 100) -> List[AutoModEvent]:
         """Get events for a specific rule"""
-        events = await self.get_events(guild_id, limit=limit * 5)
-        return [e for e in events if e.rule_id == rule_id][-limit:]
+        events_data = list(
+            self.events_collection.find(
+                {"guild_id": guild_id, "rule_id": rule_id},
+                {"_id": 0},
+            )
+            .sort("timestamp", -1)
+            .limit(limit)
+        )
+        events_data.reverse()
+        return [AutoModEvent.from_dict(e) for e in events_data]
