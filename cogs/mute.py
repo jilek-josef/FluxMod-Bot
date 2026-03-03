@@ -5,7 +5,16 @@ from fluxer import Cog
 from fluxer.checks import has_permission
 from typing import Any
 
-MUTE_ROLE_ID = 1476584004083720339 # FluxMod Muted Role Only Supported in the current implementation. Ensure this role exists in your server and has the appropriate permissions to restrict sending messages, adding reactions, etc. Adjust the role ID as needed for your server's configuration.
+from utils.mongodb import get_database
+
+def get_mute_role_id(guild_id: int) -> int:
+    db = get_database()
+    config_collection = db["guild_configs"]
+    config = config_collection.find_one({"guild_id": guild_id})
+    if config and "mute_role_id" in config:
+        return config["mute_role_id"]
+    else:
+        raise ValueError(f"Mute role ID not found for guild {guild_id}. Please set it up first.")
 
 class MuteCog(Cog):
     def __init__(self, bot: fluxer.Bot):
@@ -66,6 +75,7 @@ class MuteCog(Cog):
             parts.append(f"{seconds}s")
 
         try:
+            MUTE_ROLE_ID = get_mute_role_id(int(ctx.guild_id))
             await member_in_guild.add_role(role_id=MUTE_ROLE_ID, guild_id=int(ctx.guild_id), reason=reason)
 
             embed = fluxer.Embed(
@@ -79,6 +89,7 @@ class MuteCog(Cog):
             async def unmute_after_delay():
                 await asyncio.sleep(duration)
                 try:
+                    MUTE_ROLE_ID = get_mute_role_id(int(ctx.guild_id))
                     await member_in_guild.remove_role(role_id=MUTE_ROLE_ID, guild_id=int(ctx.guild_id), reason="Mute duration expired")
                 except Exception as e:
                     print(f"Error auto-unmuting user: {e}")
@@ -113,6 +124,7 @@ class MuteCog(Cog):
         member_in_guild = await guild.fetch_member(user_id=user_id)
 
         try:
+            MUTE_ROLE_ID = get_mute_role_id(int(ctx.guild_id))
             await member_in_guild.remove_role(role_id=MUTE_ROLE_ID, guild_id=int(ctx.guild_id), reason=reason)
 
             embed_unmuted = fluxer.Embed(
