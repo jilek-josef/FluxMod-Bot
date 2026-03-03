@@ -8,6 +8,12 @@ from typing import Dict, Optional, List
 from .automod_models import GuildAutoModSettings, AutoModPreset, AutoModEvent, AutoModRule, ActionType, RuleType, ExemptEntity, AutoModAction
 from .mongodb import get_database
 
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+LOAD_DB = os.getenv("DB_NAME") or os.getenv("MONGODB_URI")
+
 
 class AutoModManager:
     """
@@ -19,104 +25,10 @@ class AutoModManager:
         self.data_dir = data_dir
         self._lock = asyncio.Lock()
         self.db = get_database()
-        self.guild_settings_collection = self.db["automod_guild_settings"]
-        self.presets_collection = self.db["automod_presets"]
-        self.events_collection = self.db["automod_events"]
-        self._presets_initialized = False
+        self.guild_settings_collection = self.db[LOAD_DB]
 
         self.guild_settings_collection.create_index("guild_id", unique=True)
-        self.presets_collection.create_index("id", unique=True)
-        self.events_collection.create_index([("guild_id", 1), ("timestamp", -1)])
-        self.events_collection.create_index([("guild_id", 1), ("rule_id", 1), ("timestamp", -1)])
-
-    async def _ensure_default_presets(self) -> None:
-        """Ensure default presets exist in MongoDB"""
-        if self._presets_initialized:
-            return
-
-        async with self._lock:
-            if self._presets_initialized:
-                return
-
-            if self.presets_collection.count_documents({}) == 0:
-                await self._init_default_presets()
-
-            self._presets_initialized = True
-
-    async def _init_default_presets(self) -> None:
-        """Initialize default presets"""
-        default_presets = {
-            "lenient": AutoModPreset(
-                id="lenient",
-                name="Lenient",
-                description="Basic spam and obvious profanity detection",
-                rules=[
-                    AutoModRule(
-                        id="lenient_spam",
-                        name="Spam Detection",
-                        rule_type=RuleType.SPAM,
-                        patterns=["repeat_threshold:10"],
-                        action=AutoModAction(ActionType.DELETE),
-                        severity=1,
-                    )
-                ]
-            ),
-            "moderate": AutoModPreset(
-                id="moderate",
-                name="Moderate",
-                description="Balanced protection with common rules",
-                rules=[
-                    AutoModRule(
-                        id="moderate_spam",
-                        name="Spam Detection",
-                        rule_type=RuleType.SPAM,
-                        patterns=["repeat_threshold:5"],
-                        action=AutoModAction(ActionType.DELETE),
-                        severity=2,
-                    ),
-                    AutoModRule(
-                        id="moderate_caps",
-                        name="Excessive Caps",
-                        rule_type=RuleType.CAPS,
-                        patterns=["percentage:70"],
-                        action=AutoModAction(ActionType.DELETE),
-                        severity=2,
-                    ),
-                ]
-            ),
-            "strict": AutoModPreset(
-                id="strict",
-                name="Strict",
-                description="Heavy moderation with warnings and mutes",
-                rules=[
-                    AutoModRule(
-                        id="strict_spam",
-                        name="Spam Detection",
-                        rule_type=RuleType.SPAM,
-                        patterns=["repeat_threshold:3"],
-                        action=AutoModAction(ActionType.WARN),
-                        severity=4,
-                    ),
-                    AutoModRule(
-                        id="strict_caps",
-                        name="Excessive Caps",
-                        rule_type=RuleType.CAPS,
-                        patterns=["percentage:50"],
-                        action=AutoModAction(ActionType.WARN),
-                        severity=3,
-                    ),
-                    AutoModRule(
-                        id="strict_mentions",
-                        name="Mention Spam",
-                        rule_type=RuleType.MENTIONS,
-                        patterns=["count:5"],
-                        action=AutoModAction(ActionType.MUTE, duration_seconds=3600),
-                        severity=4,
-                    ),
-                ]
-            ),
-        }
-        await self.save_presets(default_presets)
+        self.guild_settings_collection.create_index([("guild_id", 1), ("automod_events.timestamp", -1)])
 
     # --- Guild Settings Operations ---
 
@@ -129,9 +41,9 @@ class AutoModManager:
 
     async def save_guild_settings(self, settings: GuildAutoModSettings) -> None:
         """Save guild settings"""
-        self.guild_settings_collection.replace_one(
+        self.guild_settings_collection.update_one(
             {"guild_id": settings.guild_id},
-            settings.to_dict(),
+            {"$set": settings.to_dict()},
             upsert=True,
         )
 
@@ -241,12 +153,7 @@ class AutoModManager:
 
     async def get_presets(self) -> Dict[str, AutoModPreset]:
         """Get all available presets"""
-        await self._ensure_default_presets()
-        presets: Dict[str, AutoModPreset] = {}
-        for doc in self.presets_collection.find({}, {"_id": 0}):
-            preset = AutoModPreset.from_dict(doc)
-            presets[preset.id] = preset
-        return presets
+        return {}
 
     async def get_preset(self, preset_id: str) -> Optional[AutoModPreset]:
         """Get a specific preset"""
@@ -255,32 +162,11 @@ class AutoModManager:
 
     async def save_presets(self, presets: Dict[str, AutoModPreset]) -> None:
         """Save presets"""
-        docs = [preset.to_dict() for preset in presets.values()]
-        self.presets_collection.delete_many({})
-        if docs:
-            self.presets_collection.insert_many(docs)
+        return
 
     async def apply_preset(self, guild_id: int, preset_id: str) -> bool:
         """Apply a preset to a guild"""
-        preset = await self.get_preset(preset_id)
-        if not preset:
-            return False
-        
-        settings = await self.get_guild_settings(guild_id)
-        settings.rules = [
-            AutoModRule(
-                id=f"{preset_id}_{rule.id}",
-                name=rule.name,
-                rule_type=rule.rule_type,
-                patterns=rule.patterns,
-                allowed_patterns=rule.allowed_patterns,
-                action=rule.action,
-                severity=rule.severity,
-            )
-            for rule in preset.rules
-        ]
-        await self.save_guild_settings(settings)
-        return True
+        return False
 
     # --- Settings Operations ---
 
@@ -306,43 +192,43 @@ class AutoModManager:
     async def log_event(self, event: AutoModEvent) -> None:
         """Log an AutoMod event"""
         async with self._lock:
-            self.events_collection.insert_one(event.to_dict())
-
-            # Keep only last 50000 events to prevent collection bloat
-            max_events = 50000
-            total_events = self.events_collection.count_documents({})
-            if total_events > max_events:
-                overflow = total_events - max_events
-                oldest_docs = list(
-                    self.events_collection.find({}, {"_id": 1})
-                    .sort([("timestamp", 1), ("_id", 1)])
-                    .limit(overflow)
-                )
-                if oldest_docs:
-                    self.events_collection.delete_many(
-                        {"_id": {"$in": [doc["_id"] for doc in oldest_docs]}}
-                    )
+            max_events_per_guild = 10000
+            self.guild_settings_collection.update_one(
+                {"guild_id": event.guild_id},
+                {
+                    "$setOnInsert": {"guild_id": event.guild_id},
+                    "$push": {
+                        "automod_events": {
+                            "$each": [event.to_dict()],
+                            "$slice": -max_events_per_guild,
+                        }
+                    },
+                },
+                upsert=True,
+            )
 
     async def get_events(self, guild_id: Optional[int] = None, limit: int = 100) -> List[AutoModEvent]:
         """Get logged events, optionally filtered by guild"""
-        query = {"guild_id": guild_id} if guild_id is not None else {}
-        events_data = list(
-            self.events_collection.find(query, {"_id": 0})
-            .sort("timestamp", -1)
-            .limit(limit)
-        )
-        events_data.reverse()
+        events_data: List[dict] = []
+
+        if guild_id is not None:
+            doc = self.guild_settings_collection.find_one(
+                {"guild_id": guild_id},
+                {"automod_events": 1, "_id": 0},
+            )
+            if not doc:
+                return []
+            events_data = doc.get("automod_events", [])
+        else:
+            for doc in self.guild_settings_collection.find({}, {"automod_events": 1, "_id": 0}):
+                events_data.extend(doc.get("automod_events", []))
+
+        events_data = sorted(events_data, key=lambda e: e.get("timestamp", 0))
+        if limit > 0:
+            events_data = events_data[-limit:]
         return [AutoModEvent.from_dict(e) for e in events_data]
 
     async def get_events_for_rule(self, guild_id: int, rule_id: str, limit: int = 100) -> List[AutoModEvent]:
         """Get events for a specific rule"""
-        events_data = list(
-            self.events_collection.find(
-                {"guild_id": guild_id, "rule_id": rule_id},
-                {"_id": 0},
-            )
-            .sort("timestamp", -1)
-            .limit(limit)
-        )
-        events_data.reverse()
-        return [AutoModEvent.from_dict(e) for e in events_data]
+        events = await self.get_events(guild_id=guild_id, limit=max(limit * 5, limit))
+        return [e for e in events if e.rule_id == rule_id][-limit:]
