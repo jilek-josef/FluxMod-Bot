@@ -8,6 +8,11 @@ class PurgeCog(Cog):
     def __init__(self, bot: fluxer.Bot):
         super().__init__(bot)
 
+    def _build_embed(self, title: str, description: str, color: int = 0x5865F2):
+        embed = fluxer.Embed(title=title, description=description, color=color)
+        embed.set_footer(text="FluxMod Moderation System")
+        return embed
+
     def _resolve_user_id(self, member: Any) -> int | None:
         if isinstance(member, fluxer.GuildMember):
             return member.user.id
@@ -32,7 +37,13 @@ class PurgeCog(Cog):
     @has_permission(fluxer.Permissions.MANAGE_MESSAGES)
     async def purge(self, ctx: fluxer.Message, limit: int = 100):
         if ctx.guild_id is None:
-            await ctx.reply("This command can only be used in a server.")
+            await ctx.reply(
+                embed=self._build_embed(
+                    "Invalid Context",
+                    "This command can only be used in a server.",
+                    0xFF0000,
+                )
+            )
             return
             
         try:
@@ -43,15 +54,21 @@ class PurgeCog(Cog):
             fetched_message_ids: list[int | str] = [msg.id for msg in fetched_messages]
             deleted = await ctx.channel.delete_messages(message_ids=fetched_message_ids)
             deleted_count = limit
-            embed = fluxer.Embed(
-                title="Purge Completed",
-                description=f"Deleted {deleted_count} messages.",
-                color=0x00FF00,
+            embed = self._build_embed(
+                "Purge Completed",
+                f"Deleted {deleted_count} messages.",
+                0x00FF00,
             )
             await ctx.send(embed=embed)
 
         except Exception as e:
-            await ctx.reply("Failed to delete messages. Please check with the bot owner for more details.")
+            await ctx.reply(
+                embed=self._build_embed(
+                    "Error Purging Messages",
+                    "Failed to delete messages. Please check with the bot owner for more details.",
+                    0xFF0000,
+                )
+            )
             print(f"Error purging messages: {e}")
 
 async def setup(bot: fluxer.Bot):
