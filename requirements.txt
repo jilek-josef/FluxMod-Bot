@@ -1,4 +1,0 @@
-fluxer.py
-python-dotenv
-colorama
-pymongo

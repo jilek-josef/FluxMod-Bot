@@ -2,11 +2,10 @@
 
 ## Local setup
 
-1. Create and activate a virtual environment.
-2. Install dependencies:
+1. Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 3. Configure `.env`:
@@ -29,7 +28,22 @@ DB_AUTH_SOURCE=admin
 4. Start the bot:
 
 ```bash
-python bot.py
+uv run python bot.py
+```
+
+## UV workflow
+
+Use these as the canonical project commands:
+
+```bash
+# Update lockfile after dependency changes
+uv lock
+
+# Sync environment from pyproject.toml + uv.lock
+uv sync
+
+# Run the bot with the project environment
+uv run python bot.py
 ```
 
 If `TOKEN` is missing, the bot now exits with a clear startup message.
