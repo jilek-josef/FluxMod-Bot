@@ -22,8 +22,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install uv
         uv install
-        uv run pip install ruff 
 
     - name: Run Ruff lint
       run: |
-        uv run ruff check . --fix
+        uvx run ruff check . --fix
