@@ -9,5 +9,6 @@ dependencies = [
 	"colorama",
 	"fluxer.py",
 	"pymongo",
+	"pyright>=1.1.408",
 	"python-dotenv",
 ]
