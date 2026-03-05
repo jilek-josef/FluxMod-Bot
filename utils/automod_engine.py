@@ -3,8 +3,8 @@ AutoMod Engine - Core logic for checking messages against rules
 """
 
 import re
-from typing import List, Tuple, Optional
-from datetime import datetime, timedelta
+from typing import Tuple, Optional
+from datetime import datetime
 import uuid
 from .automod_models import (
     AutoModRule, RuleType, ActionType, AutoModEvent, GuildAutoModSettings

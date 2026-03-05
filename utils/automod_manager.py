@@ -5,7 +5,7 @@ Abstracted to support database migration and dashboard integration
 
 import asyncio
 from typing import Dict, Optional, List
-from .automod_models import GuildAutoModSettings, AutoModPreset, AutoModEvent, AutoModRule, ActionType, RuleType, ExemptEntity, AutoModAction
+from .automod_models import GuildAutoModSettings, AutoModPreset, AutoModEvent, AutoModRule, ExemptEntity
 from .mongodb import get_database
 
 from dotenv import load_dotenv

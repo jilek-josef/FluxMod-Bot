@@ -7,10 +7,7 @@ from utils.automod_engine import AutoModEngine
 from utils.automod_models import (
     GuildAutoModSettings,
     AutoModRule,
-    AutoModAction,
-    RuleType,
     ActionType,
-    ExemptEntity,
 )
 
 

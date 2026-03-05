@@ -1,9 +1,8 @@
 import fluxer
-from colorama import Fore, Style, init
+from colorama import Fore
 import asyncio
 from dotenv import load_dotenv
 import os
-from datetime import datetime
 from utils.log import log
 
 

@@ -5,6 +5,7 @@ description = "FluxMod a Fluxer bot to help with auto moderation."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+	"aiofiles>=25.1.0",
 	"colorama",
 	"fluxer.py",
 	"pymongo",
