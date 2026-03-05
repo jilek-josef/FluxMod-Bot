@@ -45,6 +45,16 @@ class PurgeCog(Cog):
                 )
             )
             return
+
+        if ctx.channel is None:
+            await ctx.reply(
+                embed=self._build_embed(
+                    "Invalid Context",
+                    "Channel context is unavailable.",
+                    0xFF0000,
+                )
+            )
+            return
             
         try:
 

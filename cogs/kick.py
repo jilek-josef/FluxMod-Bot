@@ -59,7 +59,7 @@ class KickCog(Cog):
         member_in_guild = await guild.fetch_member(user_id=user_id)
 
         try:
-            await member_in_guild.kick(guild_id=int(ctx.guild_id), reason=reason)
+            await member_in_guild.kick(reason=reason)
             embed_kick = self._build_embed(
                 "User Kicked",
                 f"User with ID {user_id} has been kicked.\nReason: {reason}",

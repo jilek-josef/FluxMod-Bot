@@ -94,7 +94,7 @@ class MuteCog(Cog):
 
         try:
             MUTE_ROLE_ID = get_mute_role_id(guild_id)
-            await member_in_guild.add_role(role_id=MUTE_ROLE_ID, guild_id=guild_id, reason=reason)
+            await member_in_guild.add_role(role_id=MUTE_ROLE_ID, reason=reason)
 
             embed = self._build_embed(
                 "User Muted",
@@ -108,7 +108,7 @@ class MuteCog(Cog):
                 await asyncio.sleep(duration)
                 try:
                     MUTE_ROLE_ID = get_mute_role_id(guild_id)
-                    await member_in_guild.remove_role(role_id=MUTE_ROLE_ID, guild_id=guild_id, reason="Mute duration expired")
+                    await member_in_guild.remove_role(role_id=MUTE_ROLE_ID, reason="Mute duration expired")
                 except Exception as e:
                     print(f"Error auto-unmuting user: {e}")
 
@@ -162,7 +162,7 @@ class MuteCog(Cog):
 
         try:
             MUTE_ROLE_ID = get_mute_role_id(guild_id)
-            await member_in_guild.remove_role(role_id=MUTE_ROLE_ID, guild_id=guild_id, reason=reason)
+            await member_in_guild.remove_role(role_id=MUTE_ROLE_ID, reason=reason)
 
             embed_unmuted = self._build_embed(
                 "User Unmuted",

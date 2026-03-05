@@ -33,7 +33,10 @@ class WarnStorage:
 
     def get_user_warnings(self, guild_id: str, user_id: str) -> list[dict[str, Any]]:
         if self._is_mongodb_enabled():
-            docs = list(self.db.warnings.find({"guild_id": guild_id, "warning.user_id": user_id}))
+            db = self.db
+            if db is None:
+                return []
+            docs = list(db.warnings.find({"guild_id": guild_id, "warning.user_id": user_id}))
             return [doc.get("warning", {}) for doc in docs]
 
         self._ensure_guild_user(guild_id, user_id)
@@ -41,7 +44,10 @@ class WarnStorage:
 
     async def add_warning(self, guild_id: str, user_id: str, warning: dict[str, Any]):
         if self._is_mongodb_enabled():
-            self.db.warnings.insert_one({"guild_id": guild_id, "warning": warning})
+            db = self.db
+            if db is None:
+                return
+            db.warnings.insert_one({"guild_id": guild_id, "warning": warning})
             return
 
         self._ensure_guild_user(guild_id, user_id)
@@ -50,9 +56,12 @@ class WarnStorage:
 
     async def delete_warning_by_index(self, guild_id: str, user_id: str, index: int) -> bool:
         if self._is_mongodb_enabled():
-            docs = list(self.db.warnings.find({"guild_id": guild_id, "warning.user_id": user_id}))
+            db = self.db
+            if db is None:
+                return False
+            docs = list(db.warnings.find({"guild_id": guild_id, "warning.user_id": user_id}))
             if 0 <= index < len(docs):
-                self.db.warnings.delete_one({"_id": docs[index]["_id"]})
+                db.warnings.delete_one({"_id": docs[index]["_id"]})
                 return True
             return False
 

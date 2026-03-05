@@ -10,6 +10,7 @@ import re
 from fluxer import Cog
 from utils.log import log
 from datetime import datetime, timedelta, timezone
+from typing import Awaitable, Callable, cast
 
 # These data files are temporary and will be replaced with a proper database in the future. They are used to store warnings and logs for moderation actions.
 WARN_DB = "data/warns.json"
@@ -180,7 +181,7 @@ class HelperCog(Cog):
     async def before_cleanup(self):
         """Wait until the bot is ready before starting the task."""
         log("[AutoWarnDel] Waiting for bot readiness before cleanup loop.", "info")
-        wait_ready = getattr(self.bot, "wait_until_ready", None)
+        wait_ready = cast(Callable[[], Awaitable[None]] | None, getattr(self.bot, "wait_until_ready", None))
         if callable(wait_ready):
             try:
                 await asyncio.wait_for(wait_ready(), timeout=120)
@@ -193,7 +194,7 @@ class HelperCog(Cog):
             log("[AutoWarnDel] Bot has no wait_until_ready method. Starting cleanup loop immediately.", "warn")
 
 
-    def cog_unload(self):
+    async def cog_unload(self):
         """Cancel the background task when the cog is unloaded."""
         log("[AutoWarnDel] Cog unloading. Cleanup loop cancelled.", "warn")
         self.auto_warn_cleanup.cancel()
@@ -209,16 +210,17 @@ class HelperCog(Cog):
             return
 
         # Ignore THIS bot (the helper bot itself)
-        if message.author.id == self.bot.user.id:
+        bot_user = getattr(self.bot, "user", None)
+        if bot_user is None:
             return
 
-        # Safety: check perms before trying to delete
-        if not message.channel.permissions_for(message.guild.me).manage_messages:
+        if message.author.id == bot_user.id:
             return
 
         # Delete after 5 seconds
         try:
-            await message.delete(delay=5)
+            await asyncio.sleep(5)
+            await message.delete()
         except fluxer.NotFound:
             pass
         except fluxer.Forbidden:

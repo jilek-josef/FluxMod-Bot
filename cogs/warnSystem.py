@@ -38,7 +38,7 @@ class WarnSystemCog(Cog):
                 channel_id = int(value)
 
         try:
-            channel = await self.bot.fetch_channel(channel_id)
+            channel = await self.bot.fetch_channel(str(channel_id))
             if channel:
                 await channel.send(embed=embed)
         except fluxer.NotFound:
@@ -55,8 +55,11 @@ class WarnSystemCog(Cog):
         except fluxer.NotFound:
             pass
 
-    async def respond_and_delete(self, ctx, content=None, embed: fluxer.Embed = None, delay=5):
-        msg = await ctx.send(content=content, embed=embed)
+    async def respond_and_delete(self, ctx, content=None, embed: fluxer.Embed | None = None, delay=5):
+        if embed is None:
+            msg = await ctx.send(content=content)
+        else:
+            msg = await ctx.send(content=content, embed=embed)
         await asyncio.sleep(delay)
         try:
             await msg.delete()
@@ -68,12 +71,11 @@ class WarnSystemCog(Cog):
     @Cog.command(name="setlogs")
     @has_permission(fluxer.Permissions.MANAGE_CHANNELS)
     async def setlogs_cmd(self, ctx, channel: Any):
-        guild = await self.bot.fetch_guild(str(ctx.guild.id))
         channel_obj = None
         channel_id = resolve_channel_id(channel)
         if channel_id is not None:
             try:
-                channel_obj = await guild.fetch_channel(channel_id)
+                channel_obj = await self.bot.fetch_channel(str(channel_id))
             except (fluxer.NotFound, fluxer.Forbidden):
                 channel_obj = None
 
@@ -145,8 +147,12 @@ class WarnSystemCog(Cog):
             f"**User:** {mention} ({user_id})\n**Moderator:** {ctx.author.mention} ({ctx.author.id})\n**Reason:** {reason}\n**Timestamp:** <t:{int(fluxer.utils.utcnow().timestamp())}:F>",
             0xFFA500
         )
-        if target_member and hasattr(target_member, "display_avatar"):
-            log_embed.set_thumbnail(url=target_member.display_avatar.url)
+        if target_member:
+            target_user = getattr(target_member, "user", target_member)
+            avatar = getattr(target_user, "display_avatar", None)
+            avatar_url = getattr(avatar, "url", None)
+            if avatar_url:
+                log_embed.set_thumbnail(url=avatar_url)
         await self.send_mod_log(ctx.guild, log_embed)
 
     @Cog.command(name="delwarn")
