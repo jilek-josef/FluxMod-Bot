@@ -52,7 +52,7 @@ class PurgeCog(Cog):
             fetched_messages = await ctx.channel.fetch_messages(limit=limit + 1)
 
             fetched_message_ids: list[int | str] = [msg.id for msg in fetched_messages]
-            deleted = await ctx.channel.delete_messages(message_ids=fetched_message_ids)
+            await ctx.channel.delete_messages(message_ids=fetched_message_ids)
             deleted_count = limit
             embed = self._build_embed(
                 "Purge Completed",
