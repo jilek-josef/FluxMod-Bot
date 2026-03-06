@@ -10,6 +10,18 @@ load_dotenv()
 
 _client: Optional[Any] = None
 
+class MongoDB:
+    def __init__(self, uri: Optional[str] = None, db_name: Optional[str] = None):
+        self.uri = uri or build_mongodb_uri()
+        self.db_name = db_name or os.getenv("DB_NAME", "").strip()
+        if not self.db_name:
+            raise ValueError("MongoDB database name is required. Set DB_NAME or pass db_name.")
+        self.client = get_mongo_client()
+        self.db = self.client[self.db_name]
+
+    def get_collection(self, collection_name: str) -> Any:
+        return self.db[collection_name]
+
 
 def build_mongodb_uri() -> str:
     """Build MongoDB URI from MONGODB_URI or DB_* env vars."""
