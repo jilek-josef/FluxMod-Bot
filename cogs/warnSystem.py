@@ -1,41 +1,68 @@
 import asyncio
 import fluxer
 from fluxer import Cog
-from fluxer.checks import has_permission
 from typing import Any
 
-from utils.json_utils import load_json_sync, save_json
 from utils.resolvers import resolve_channel_id, resolve_guild_member, resolve_user_id
-from utils.warn_storage import WarnStorage
 from utils.fluxer_user import FluxerUser
-
-WARN_DB = "data/warns.json"
-LOGS_DB = "data/logs.json"
+from utils.datawrapper import DataWrapper
 
 class WarnSystemCog(Cog):
     def __init__(self, bot: fluxer.Bot):
         super().__init__(bot)
         self.bot = bot
-        self.warn_storage = WarnStorage(WARN_DB)
-        self.log_channels = load_json_sync(LOGS_DB)
+        self.datawrapper = DataWrapper()
 
     def _build_embed(self, title: str, description: str, color: int = 0x5865F2):
         embed = fluxer.Embed(title=title, description=description, color=color)
         embed.set_footer(text="FluxMod Moderation System")
         return embed
 
-    async def send_mod_log(self, guild: fluxer.Guild, embed: fluxer.Embed):
-        guild_id = str(guild.id)
-        if guild_id not in self.log_channels:
-            return
+    def _permission_value(self, permission: Any) -> int:
+        raw_value = getattr(permission, "value", permission)
+        try:
+            return int(raw_value)
+        except Exception:
+            return 0
 
-        channel_id = self.log_channels[guild_id]
-        if isinstance(channel_id, str):
-            value = channel_id.strip()
-            if value.startswith("<#") and value.endswith(">"):
-                value = value[2:-1]
-            if value.isdigit():
-                channel_id = int(value)
+    def _has_required_permission(self, ctx, permission: Any) -> bool:
+        """
+        Local permission check to avoid hard failures from Fluxer's decorator path.
+        If permission payload is unavailable in this context, fallback allows command.
+        """
+        author = getattr(ctx, "author", None)
+        if author is None:
+            return False
+
+        perms = getattr(author, "permissions", None)
+        if perms is None:
+            # Fallback for gateway payloads that omit permission bitfields.
+            return True
+
+        user_perms = self._permission_value(perms)
+        needed = self._permission_value(permission)
+        if needed <= 0:
+            return True
+        return (user_perms & needed) == needed
+
+    async def _ensure_permission_or_reply(self, ctx, permission: Any, label: str) -> bool:
+        if self._has_required_permission(ctx, permission):
+            return True
+
+        await ctx.reply(
+            embed=self._build_embed(
+                "Missing Permission",
+                f"You need `{label}` to use this command.",
+                0xFF0000,
+            )
+        )
+        return False
+
+    async def send_mod_log(self, guild: fluxer.Guild, embed: fluxer.Embed):
+        await self.datawrapper.ensure_guild(guild.id)
+        channel_id = await self.datawrapper.get_log_channel_id(guild.id)
+        if channel_id is None:
+            return
 
         try:
             channel = await self.bot.fetch_channel(str(channel_id))
@@ -69,8 +96,10 @@ class WarnSystemCog(Cog):
     # ------------------- Commands -------------------
 
     @Cog.command(name="setlogs")
-    @has_permission(fluxer.Permissions.MANAGE_CHANNELS)
     async def setlogs_cmd(self, ctx, channel: Any):
+        if not await self._ensure_permission_or_reply(ctx, fluxer.Permissions.MANAGE_CHANNELS, "MANAGE_CHANNELS"):
+            return
+
         channel_obj = None
         channel_id = resolve_channel_id(channel)
         if channel_id is not None:
@@ -86,8 +115,8 @@ class WarnSystemCog(Cog):
             )
             return
 
-        self.log_channels[str(ctx.guild.id)] = channel_obj.id
-        await save_json(LOGS_DB, self.log_channels)
+        await self.datawrapper.ensure_guild(ctx.guild.id)
+        await self.datawrapper.set_log_channel_id(ctx.guild.id, channel_obj.id)
 
         await self.respond_and_delete(
             ctx,
@@ -99,16 +128,21 @@ class WarnSystemCog(Cog):
         )
 
     @Cog.command(name="warnings")
-    @has_permission(fluxer.Permissions.MANAGE_MESSAGES)
     async def warnings(self, ctx, member: Any):
-        guild_id = str(ctx.guild.id)
+        if not await self._ensure_permission_or_reply(ctx, fluxer.Permissions.MANAGE_MESSAGES, "MANAGE_MESSAGES"):
+            return
+
+        guild_id = ctx.guild.id
         user_id = resolve_user_id(member)
         if user_id is None:
             await ctx.reply(embed=self._build_embed("Invalid User", "Use a mention or user ID.", 0xFF0000))
             return
 
-        warning_list_raw = self.warn_storage.get_user_warnings(guild_id, str(user_id))
-        warning_list = [f"{w.get('timestamp', 'Unknown time')}: {w.get('reason', 'No reason provided')}" for w in warning_list_raw]
+        warning_list_raw = await self.datawrapper.get_warns(guild_id, user_id)
+        warning_list = [
+            f"{w.get('timestamp', 'Unknown time')}: {w.get('reason', 'No reason provided')}"
+            for w in warning_list_raw
+        ]
 
         if warning_list:
             await ctx.reply(embed=self._build_embed(f"Warnings for <@{user_id}>", "\n".join(warning_list), 0xFFFF00))
@@ -116,21 +150,17 @@ class WarnSystemCog(Cog):
             await ctx.reply(embed=self._build_embed("No Warnings Found", f"No warnings found for <@{user_id}>.", 0x32CD32))
 
     @Cog.command(name="warn")
-    @has_permission(fluxer.Permissions.MANAGE_MESSAGES)
     async def warn_cmd(self, ctx, member: Any, reason: str = "No reason provided"):
+        if not await self._ensure_permission_or_reply(ctx, fluxer.Permissions.MANAGE_MESSAGES, "MANAGE_MESSAGES"):
+            return
+
         user_id = resolve_user_id(member)
         if user_id is None:
             await ctx.reply(embed=self._build_embed("Invalid User", "Use a mention or user ID.", 0xFF0000))
             return
 
-        guild_id = str(ctx.guild.id)
-        warning_payload = {
-            "user_id": str(user_id),
-            "reason": reason,
-            "moderator": str(ctx.author.id),
-            "timestamp": fluxer.utils.utcnow().isoformat()
-        }
-        await self.warn_storage.add_warning(guild_id, str(user_id), warning_payload)
+        guild_id = ctx.guild.id
+        await self.datawrapper.add_warn(guild_id, user_id, ctx.author.id, reason)
 
         target_member = await resolve_guild_member(self.bot, ctx, member)
         display_name = target_member.display_name if target_member else str(user_id)
@@ -156,15 +186,17 @@ class WarnSystemCog(Cog):
         await self.send_mod_log(ctx.guild, log_embed)
 
     @Cog.command(name="delwarn")
-    @has_permission(fluxer.Permissions.MANAGE_MESSAGES)
     async def delwarn(self, ctx, member: Any, index: int):
-        guild_id = str(ctx.guild.id)
+        if not await self._ensure_permission_or_reply(ctx, fluxer.Permissions.MANAGE_MESSAGES, "MANAGE_MESSAGES"):
+            return
+
+        guild_id = ctx.guild.id
         user_id = resolve_user_id(member)
         if user_id is None:
             await ctx.reply(embed=self._build_embed("Invalid User", "Use a mention or user ID.", 0xFF0000))
             return
 
-        deleted = await self.warn_storage.delete_warning_by_index(guild_id, str(user_id), index)
+        deleted = await self.datawrapper.remove_warn_by_index(guild_id, user_id, index)
         if deleted:
             await ctx.reply(embed=self._build_embed("Warning Deleted", f"Deleted warning {index} for <@{user_id}>.", 0xFFA500))
         else:

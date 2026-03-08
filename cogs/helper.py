@@ -2,27 +2,19 @@ from utils import tasks
 
 import fluxer
 import asyncio
-import json # This is to test auto deleting data before using mongoDB
-import os
-import aiofiles
-import re
 
 from fluxer import Cog
 from utils.log import log
+from utils.datawrapper import DataWrapper
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, cast
-
-# These data files are temporary and will be replaced with a proper database in the future. They are used to store warnings and logs for moderation actions.
-WARN_DB = "data/warns.json"
-LOG_DB = "data/logs.json"
 
 
 class HelperCog(Cog):
     def __init__(self, bot: fluxer.Bot):
         super().__init__(bot)
         self.bot = bot
-        self.warnings = self.load_json_sync(WARN_DB)
-        self.log_channels = self.load_json_sync(LOG_DB)
+        self.datawrapper = DataWrapper()
         self._cleanup_run_count = 0
         self._cleanup_last_started_at: datetime | None = None
         self._cleanup_last_finished_at: datetime | None = None
@@ -32,34 +24,14 @@ class HelperCog(Cog):
         if self.auto_warn_cleanup.current_task is not None:
             log("[AutoWarnDel] Background task created successfully.", "info")
 
-    def load_json_sync(self, path: str) -> dict:
-        """Load a JSON file synchronously with safe defaults."""
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        if not os.path.exists(path):
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump({}, f)
-            return {}
-
-        try:
-            with open(path, "r", encoding="utf-8") as file:
-                return json.load(file)
-        except (json.JSONDecodeError, FileNotFoundError):
-            return {}
-
-
-    async def save_json(self, path: str, data: dict):
-        """Save data to JSON asynchronously."""
-        async with aiofiles.open(path, "w", encoding="utf-8") as f:
-            await f.write(json.dumps(data, indent=4, ensure_ascii=False))
-
     async def send_mod_log(self, guild: fluxer.Guild, embed: fluxer.Embed):
         """Send an embed to the guild's mod log channel if configured."""
-        channel_id = self.log_channels.get(str(guild.id))
+        channel_id = await self.datawrapper.get_log_channel_id(guild.id)
         if not channel_id:
             return
 
         try:
-            channel = await self.bot.fetch_channel(channel_id)
+            channel = await self.bot.fetch_channel(str(channel_id))
             if channel:
                 await channel.send(embed=embed)
         except fluxer.NotFound:
@@ -67,22 +39,31 @@ class HelperCog(Cog):
         except fluxer.Forbidden:
             pass
 
+    @staticmethod
+    def _as_utc(dt: object) -> datetime | None:
+        if not isinstance(dt, datetime):
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
     async def _run_cleanup_once(self):
         """Run one cleanup pass for warning expiry."""
         self._cleanup_run_count += 1
         self._cleanup_last_started_at = datetime.now(timezone.utc)
+        warnings_by_guild = await self.datawrapper.get_warns_grouped()
         log(
-            f"[AutoWarnDel] Tick #{self._cleanup_run_count} started. Guilds tracked: {len(self.warnings)}",
+            f"[AutoWarnDel] Tick #{self._cleanup_run_count} started. Guilds tracked: {len(warnings_by_guild)}",
             "info",
         )
 
-        year_ago = datetime.now(timezone.utc) - timedelta(days=365)
+        year_ago = datetime.now(timezone.utc) - timedelta(days=30)  # Set to 30 days for testing; change to 365 for production
         removed_count = 0
         guilds_scanned = 0
         users_scanned = 0
         warns_scanned = 0
 
-        for guild_id, members in list(self.warnings.items()):
+        for guild_id, members in list(warnings_by_guild.items()):
             try:
                 guild = await self.bot.fetch_guild(str(guild_id))
             except Exception:
@@ -97,35 +78,17 @@ class HelperCog(Cog):
             for member_id, warns in list(members.items()):
                 users_scanned += 1
                 warns_scanned += len(warns)
-                valid_warns = []
+                expired_count = sum(
+                    1 for warn in warns
+                    if (
+                        (ts := self._as_utc(warn.get("timestamp"))) is not None
+                        and ts < year_ago
+                    )
+                )
 
-                for warn in warns:
-                    try:
-                        raw_time = warn["timestamp"].replace("Z", "+00:00")
-
-                        # Fix non-padded months/days (e.g. 2024-1-9 → 2024-01-09)
-                        if re.match(r"^\d{4}-\d{1,2}-\d{1,2}T", raw_time):
-                            parts = raw_time.split("T")
-                            date_parts = parts[0].split("-")
-                            if len(date_parts) == 3:
-                                year, month, day = date_parts
-                                raw_time = f"{int(year):04d}-{int(month):02d}-{int(day):02d}T{parts[1]}"
-
-                        warn_time = datetime.fromisoformat(raw_time)
-                        if warn_time.tzinfo is None:
-                            warn_time = warn_time.replace(tzinfo=timezone.utc)
-
-                        if warn_time > year_ago:
-                            valid_warns.append(warn)
-
-                    except (KeyError, ValueError):
-                        # If timestamp invalid or missing, keep it (safe fallback)
-                        valid_warns.append(warn)
-
-                if len(valid_warns) < len(warns):
-                    diff = len(warns) - len(valid_warns)
+                if expired_count > 0:
+                    diff = expired_count
                     removed_count += diff
-                    self.warnings[guild_id][member_id] = valid_warns
                     log(
                         f"[AutoWarnDel] Removed {diff} expired warning(s) for user {member_id} in guild {guild_id}.",
                         "debug",
@@ -159,10 +122,10 @@ class HelperCog(Cog):
                         await self.send_mod_log(guild, embed)
 
         if removed_count > 0:
-            await self.save_json(WARN_DB, self.warnings)
+            removed_in_db = await self.datawrapper.delete_warns_older_than(year_ago)
             self._cleanup_last_finished_at = datetime.now(timezone.utc)
             log(
-                f"[AutoWarnDel] Tick #{self._cleanup_run_count} complete. Removed={removed_count}, GuildsScanned={guilds_scanned}, UsersScanned={users_scanned}, WarnsScanned={warns_scanned}",
+                f"[AutoWarnDel] Tick #{self._cleanup_run_count} complete. Removed={removed_in_db}, GuildsScanned={guilds_scanned}, UsersScanned={users_scanned}, WarnsScanned={warns_scanned}",
                 "success",
             )
         else:

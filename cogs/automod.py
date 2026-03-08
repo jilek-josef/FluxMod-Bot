@@ -1,8 +1,8 @@
 import fluxer
 import re
 
-from utils.json_utils import load_json_sync
 from utils.embed_builder import EmbedBuilder
+from utils.datawrapper import DataWrapper
 from fluxer import Cog
 
 
@@ -10,38 +10,7 @@ from fluxer import Cog
 class AutoModCog(Cog):
     def __init__(self, bot: fluxer.Bot):
         super().__init__(bot)
-
-        presets = load_json_sync("data/automod_presets.json")
-        self.rule_config = presets.get("Medium Security (Recommended)", {})
-
-        self.keyword_patterns = self._normalize_pattern_list(self.rule_config.get("keyword_filter", []))
-        self.allowed_patterns = self._normalize_pattern_list(self.rule_config.get("allowed_keywords", []))
-        self.regex_patterns = [
-            p for p in self.rule_config.get("regex_patterns", []) if isinstance(p, str) and p
-        ]
-
-        self.exempt_roles = {str(rid) for rid in self.rule_config.get("exempt_roles", [])}
-        self.exempt_channels = {str(cid) for cid in self.rule_config.get("exempt_channels", [])}
-
-        self._compiled_keyword_patterns = []
-        for pattern in self.keyword_patterns:
-            compiled = self._compile_wildcard_pattern(pattern)
-            if compiled:
-                self._compiled_keyword_patterns.append((pattern, compiled))
-
-        self._compiled_allowed_patterns = []
-        for pattern in self.allowed_patterns:
-            compiled = self._compile_wildcard_pattern(pattern)
-            if compiled:
-                self._compiled_allowed_patterns.append((pattern, compiled))
-
-        self._compiled_regex_patterns = []
-        for pattern in self.regex_patterns:
-            try:
-                self._compiled_regex_patterns.append((pattern, re.compile(pattern, re.IGNORECASE)))
-            except re.error:
-                # Ignore invalid regex so one bad pattern cannot disable AutoMod.
-                continue
+        self.datawrapper = DataWrapper()
 
     @staticmethod
     def _compile_wildcard_pattern(pattern: str):
@@ -66,37 +35,58 @@ class AutoModCog(Cog):
 
         return normalized
 
-    def _is_exempt(self, message: fluxer.Message) -> bool:
+    def _is_exempt(self, message: fluxer.Message, exempt_roles: set[str], exempt_channels: set[str]) -> bool:
         channel_id = str(getattr(message.channel, "id", ""))
-        if channel_id and channel_id in self.exempt_channels:
+        if channel_id and channel_id in exempt_channels:
             return True
 
         author_roles = getattr(message.author, "roles", []) or []
         author_role_ids = {str(getattr(role, "id", "")) for role in author_roles}
-        return bool(self.exempt_roles.intersection(author_role_ids))
+        return bool(exempt_roles.intersection(author_role_ids))
 
-    def _is_allowed_content(self, content: str) -> bool:
-        for _, allowed_pattern in self._compiled_allowed_patterns:
+    def _is_allowed_content(self, content: str, compiled_allowed_patterns):
+        for _, allowed_pattern in compiled_allowed_patterns:
             if allowed_pattern.search(content):
                 return True
         return False
 
-    def handle_prohibited_content(self, content: str):
+    def handle_prohibited_content(self, content: str, rule: dict):
         content_lower = (content or "").lower()
 
         if not content_lower:
             return False, None
 
-        if self._is_allowed_content(content_lower):
+        patterns = self._normalize_pattern_list(rule.get("patterns", []))
+        allowed_patterns = self._normalize_pattern_list(rule.get("allowed_patterns", []))
+        rule_type = str(rule.get("rule_type", "")).lower()
+
+        compiled_patterns = []
+        for pattern in patterns:
+            compiled = self._compile_wildcard_pattern(pattern)
+            if compiled:
+                compiled_patterns.append((pattern, compiled))
+
+        compiled_allowed_patterns = []
+        for pattern in allowed_patterns:
+            compiled = self._compile_wildcard_pattern(pattern)
+            if compiled:
+                compiled_allowed_patterns.append((pattern, compiled))
+
+        if self._is_allowed_content(content_lower, compiled_allowed_patterns):
             return False, None
 
-        for pattern, regex in self._compiled_keyword_patterns:
-            if regex.search(content_lower):
-                return True, f"keyword: `{pattern}`"
+        if rule_type == "keyword":
+            for pattern, regex in compiled_patterns:
+                if regex.search(content_lower):
+                    return True, f"keyword: `{pattern}`"
 
-        for pattern, regex in self._compiled_regex_patterns:
-            if regex.search(content):
-                return True, f"regex: `{pattern}`"
+        if rule_type == "regex":
+            for pattern in patterns:
+                try:
+                    if re.search(pattern, content, re.IGNORECASE):
+                        return True, f"regex: `{pattern}`"
+                except re.error:
+                    continue
 
         return False, None
 
@@ -108,14 +98,38 @@ class AutoModCog(Cog):
         if message.author.bot:
             return
 
-        if self._is_exempt(message):
-            return
-
         if not getattr(message, "content", None):
             return
+
+        if not message.guild:
+            return
+
+        guild_id = message.guild.id
+        await self.datawrapper.ensure_guild(guild_id)
+        rules = await self.datawrapper.get_enabled_automod_rules(guild_id)
+
+        if not rules:
+            return
+
+        exempt_roles = {
+            str(role_id)
+            for rule in rules
+            for role_id in rule.get("exempt_roles", [])
+        }
+        exempt_channels = {
+            str(channel_id)
+            for rule in rules
+            for channel_id in rule.get("exempt_channels", [])
+        }
+
+        if self._is_exempt(message, exempt_roles, exempt_channels):
+            return
         
-        violated, reason = self.handle_prohibited_content(message.content)
-        if violated:
+        for rule in rules:
+            violated, reason = self.handle_prohibited_content(message.content, rule)
+            if not violated:
+                continue
+
             try:
                 await message.delete()
                 channel = message.channel
@@ -130,6 +144,8 @@ class AutoModCog(Cog):
                 pass
             except fluxer.NotFound:
                 pass
+
+            return
 
 async def setup(bot: fluxer.Bot):
     await bot.add_cog(AutoModCog(bot))

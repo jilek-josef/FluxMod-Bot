@@ -37,6 +37,7 @@ async def load_cogs():
         if filename.endswith(".py"):
             name = filename[:-3]
             try:
+                log(f"Loading cog: {filename}", "info")
                 await client.load_extension(f"cogs.{name}")
                 loaded.append(filename)
             except Exception as e:

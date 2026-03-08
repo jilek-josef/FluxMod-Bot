@@ -2,14 +2,14 @@ import asyncio
 
 import fluxer
 from fluxer import Cog
-from fluxer.checks import has_permission
 from typing import Any
 
-from utils.mongodb import get_database
+from database.mongo import MongoDB
+
+db = MongoDB()
 
 def get_mute_role_id(guild_id: int) -> int:
-    db = get_database()
-    config_collection = db["guild_configs"]
+    config_collection = db.collection("guild_configs")
     config = config_collection.find_one({"guild_id": guild_id})
     if config and "mute_role_id" in config:
         return config["mute_role_id"]
@@ -24,6 +24,41 @@ class MuteCog(Cog):
         embed = fluxer.Embed(title=title, description=description, color=color)
         embed.set_footer(text="FluxMod Moderation System")
         return embed
+
+    def _permission_value(self, permission: Any) -> int:
+        raw_value = getattr(permission, "value", permission)
+        try:
+            return int(raw_value)
+        except Exception:
+            return 0
+
+    def _has_required_permission(self, ctx: fluxer.Message, permission: Any) -> bool:
+        author = getattr(ctx, "author", None)
+        if author is None:
+            return False
+
+        perms = getattr(author, "permissions", None)
+        if perms is None:
+            return True
+
+        user_perms = self._permission_value(perms)
+        needed = self._permission_value(permission)
+        if needed <= 0:
+            return True
+        return (user_perms & needed) == needed
+
+    async def _ensure_permission_or_reply(self, ctx: fluxer.Message, permission: Any, label: str) -> bool:
+        if self._has_required_permission(ctx, permission):
+            return True
+
+        await ctx.reply(
+            embed=self._build_embed(
+                "Missing Permission",
+                f"You need `{label}` to use this command.",
+                0xFF0000,
+            )
+        )
+        return False
 
     def _resolve_user_id(self, member: Any) -> int | None:
         if isinstance(member, fluxer.GuildMember):
@@ -47,7 +82,6 @@ class MuteCog(Cog):
 
 
     @Cog.command(name="mute")
-    @has_permission(fluxer.Permissions.MODERATE_MEMBERS)
     async def mute(
         self,
         ctx: fluxer.Message,
@@ -56,6 +90,9 @@ class MuteCog(Cog):
         *,
         reason: str = "No reason provided"
     ):
+        if not await self._ensure_permission_or_reply(ctx, fluxer.Permissions.MODERATE_MEMBERS, "MODERATE_MEMBERS"):
+            return
+
         if ctx.guild_id is None:
             await ctx.reply(
                 embed=self._build_embed(
@@ -126,7 +163,6 @@ class MuteCog(Cog):
             print(f"Error muting user: {e}")
 
     @Cog.command(name="unmute")
-    @has_permission(fluxer.Permissions.MODERATE_MEMBERS)
     async def unmute(
         self,
         ctx: fluxer.Message,
@@ -134,6 +170,8 @@ class MuteCog(Cog):
         *,
         reason: str = "No reason provided"
     ):
+        if not await self._ensure_permission_or_reply(ctx, fluxer.Permissions.MODERATE_MEMBERS, "MODERATE_MEMBERS"):
+            return
 
         if ctx.guild_id is None:
             await ctx.reply(
