@@ -39,4 +39,17 @@ uv sync
 uv run python bot.py
 ```
 
+## uv ruff & pyright
+
+Please make sure you run these commands before pushing
+
+```bash
+# Ruff Check
+uvx ruff check . --fix
+
+# PyRight Check
+uv run pyright .
+
+```
+
 If `TOKEN` is missing, the bot now exits with a clear startup message.
