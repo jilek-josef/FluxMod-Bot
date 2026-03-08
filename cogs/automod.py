@@ -56,9 +56,13 @@ class AutoModCog(Cog):
         if not content_lower:
             return False, None
 
-        patterns = self._normalize_pattern_list(rule.get("patterns", []))
+        # Support both legacy schema (patterns) and current DB schema (keywords).
+        patterns = self._normalize_pattern_list(
+            rule.get("patterns", rule.get("keywords", []))
+        )
         allowed_patterns = self._normalize_pattern_list(rule.get("allowed_patterns", []))
         rule_type = str(rule.get("rule_type", "")).lower()
+        pattern_regex = rule.get("pattern")
 
         compiled_patterns = []
         for pattern in patterns:
@@ -75,7 +79,8 @@ class AutoModCog(Cog):
         if self._is_allowed_content(content_lower, compiled_allowed_patterns):
             return False, None
 
-        if rule_type == "keyword":
+        # Default to keyword matching when a rule includes keyword lists.
+        if rule_type == "keyword" or (not rule_type and patterns):
             for pattern, regex in compiled_patterns:
                 if regex.search(content_lower):
                     return True, f"keyword: `{pattern}`"
@@ -87,6 +92,14 @@ class AutoModCog(Cog):
                         return True, f"regex: `{pattern}`"
                 except re.error:
                     continue
+
+        # Support DB rules that store one regex in `pattern`.
+        if isinstance(pattern_regex, str) and pattern_regex.strip():
+            try:
+                if re.search(pattern_regex, content, re.IGNORECASE):
+                    return True, f"pattern: `{pattern_regex}`"
+            except re.error:
+                pass
 
         return False, None
 
