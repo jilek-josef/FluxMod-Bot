@@ -6,13 +6,13 @@ Abstracted to support database migration and dashboard integration
 import asyncio
 from typing import Dict, Optional, List
 from .automod_models import GuildAutoModSettings, AutoModPreset, AutoModEvent, AutoModRule, ExemptEntity
-from .mongodb import get_database
+from database.mongo import MongoDB
 
 from dotenv import load_dotenv
 import os
 
 load_dotenv()
-LOAD_DB = os.getenv("DB_NAME") or os.getenv("MONGODB_URI")
+LOAD_DB = os.getenv("DB_NAME")
 
 
 class AutoModManager:
@@ -24,8 +24,8 @@ class AutoModManager:
     def __init__(self, data_dir: str = "data/automod"):
         self.data_dir = data_dir
         self._lock = asyncio.Lock()
-        self.db = get_database()
-        self.guild_settings_collection = self.db[LOAD_DB]
+        self.db = MongoDB(db_name=LOAD_DB)
+        self.guild_settings_collection = self.db.collection("guild_settings")
 
         self.guild_settings_collection.create_index("guild_id", unique=True)
         self.guild_settings_collection.create_index([("guild_id", 1), ("automod_events.timestamp", -1)])
