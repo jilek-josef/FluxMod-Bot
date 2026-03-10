@@ -1,5 +1,3 @@
-# This file is to help the bot delete a message after a certain amount of time, to avoid cluttering channels with "This command has been deleted" messages.
-
 import asyncio
 import fluxer
 
