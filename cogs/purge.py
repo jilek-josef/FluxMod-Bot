@@ -3,6 +3,8 @@ import fluxer
 from fluxer import Cog
 from typing import Any
 
+from utils.delete_after import delete_after
+
 class PurgeCog(Cog):
     def __init__(self, bot: fluxer.Bot):
         super().__init__(bot)
@@ -38,13 +40,14 @@ class PurgeCog(Cog):
         if self._has_required_permission(ctx, permission):
             return True
 
-        await ctx.reply(
+        warning_message = await ctx.reply(
             embed=self._build_embed(
                 "Missing Permission",
                 f"You need `{label}` to use this command.",
                 0xFF0000,
             )
         )
+        await delete_after(warning_message, 10)
         return False
 
     def _resolve_user_id(self, member: Any) -> int | None:
@@ -73,23 +76,25 @@ class PurgeCog(Cog):
             return
 
         if ctx.guild_id is None:
-            await ctx.reply(
+            error_message = await ctx.reply(
                 embed=self._build_embed(
                     "Invalid Context",
                     "This command can only be used in a server.",
                     0xFF0000,
                 )
             )
+            await delete_after(error_message, 10)
             return
 
         if ctx.channel is None:
-            await ctx.reply(
+            error_message = await ctx.reply(
                 embed=self._build_embed(
                     "Invalid Context",
                     "Channel context is unavailable.",
                     0xFF0000,
                 )
             )
+            await delete_after(error_message, 10)
             return
             
         try:
@@ -105,16 +110,18 @@ class PurgeCog(Cog):
                 f"Deleted {deleted_count} messages.",
                 0x00FF00,
             )
-            await ctx.send(embed=embed)
+            confirmation_message = await ctx.send(embed=embed)
+            await delete_after(confirmation_message, 10)
 
         except Exception as e:
-            await ctx.reply(
+            error_message = await ctx.reply(
                 embed=self._build_embed(
                     "Error Purging Messages",
                     "Failed to delete messages. Please check with the bot owner for more details.",
                     0xFF0000,
                 )
             )
+            await delete_after(error_message, 10)
             print(f"Error purging messages: {e}")
 
 async def setup(bot: fluxer.Bot):

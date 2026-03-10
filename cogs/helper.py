@@ -161,34 +161,7 @@ class HelperCog(Cog):
         """Cancel the background task when the cog is unloaded."""
         log("[AutoWarnDel] Cog unloading. Cleanup loop cancelled.", "warn")
         self.auto_warn_cleanup.cancel()
-    
-    @Cog.listener()
-    async def on_message(self, message: fluxer.Message):
-        # Ignore DMs
-        if not message.guild:
-            return
-
-        # Only care about bot messages
-        if not message.author.bot:
-            return
-
-        # Ignore THIS bot (the helper bot itself)
-        bot_user = getattr(self.bot, "user", None)
-        if bot_user is None:
-            return
-
-        if message.author.id == bot_user.id:
-            return
-
-        # Delete after 5 seconds
-        try:
-            await asyncio.sleep(5)
-            await message.delete()
-        except fluxer.NotFound:
-            pass
-        except fluxer.Forbidden:
-            pass
-
+        
 async def setup(bot: fluxer.Bot):
     await bot.add_cog(HelperCog(bot))
 
