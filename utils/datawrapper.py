@@ -9,7 +9,15 @@ from database.guilds import (
     get_log_channel_id,
     set_log_channel_id,
 )
-from database.automod import get_rules, get_enabled_rules, get_rule
+from database.automod import (
+    get_rules,
+    get_enabled_rules,
+    get_rule,
+    set_rules,
+    set_rule,
+    set_rule_enabled,
+    delete_rule,
+)
 from database.warns import (
     add_warn,
     get_user_warns,
@@ -42,9 +50,17 @@ class DataWrapper:
 
         return get_command_settings(guild_id)
 
+    async def get_guild_config(self, guild_id: int) -> dict:
+
+        return await self.get_command_settings(guild_id)
+
     async def update_command_settings(self, guild_id: int, settings: dict):
 
         update_command_settings(guild_id, settings)
+
+    async def set_guild_config(self, guild_id: int, config: dict):
+
+        await self.update_command_settings(guild_id, config)
 
     async def get_automod_rules(self, guild_id: int) -> List[dict]:
 
@@ -64,6 +80,30 @@ class DataWrapper:
     async def get_automod_rule(self, guild_id: int, rule_name: str) -> dict | None:
 
         return get_rule(guild_id, rule_name)
+
+    async def set_automod_rules(self, guild_id: int, rules: List[dict]):
+
+        set_rules(guild_id, rules)
+        self._automod_cache[guild_id] = rules
+
+    async def set_automod_rule(self, guild_id: int, rule_name: str, rule_data: dict):
+
+        set_rule(guild_id, rule_name, rule_data)
+        await self.invalidate_automod_cache(guild_id)
+
+    async def set_automod_rule_enabled(self, guild_id: int, rule_name: str, enabled: bool) -> bool:
+
+        changed = set_rule_enabled(guild_id, rule_name, enabled)
+        if changed:
+            await self.invalidate_automod_cache(guild_id)
+        return changed
+
+    async def delete_automod_rule(self, guild_id: int, rule_name: str) -> bool:
+
+        deleted = delete_rule(guild_id, rule_name)
+        if deleted:
+            await self.invalidate_automod_cache(guild_id)
+        return deleted
 
     async def invalidate_automod_cache(self, guild_id: int):
 

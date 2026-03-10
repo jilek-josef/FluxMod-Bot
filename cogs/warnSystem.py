@@ -3,7 +3,7 @@ import fluxer
 from fluxer import Cog
 from typing import Any
 
-from utils.resolvers import resolve_channel_id, resolve_guild_member, resolve_user_id
+from utils.resolvers import resolve_user_id
 from utils.fluxer_user import FluxerUser
 from utils.datawrapper import DataWrapper
 from utils.delete_after import delete_after
@@ -97,38 +97,6 @@ class WarnSystemCog(Cog):
 
     # ------------------- Commands -------------------
 
-    @Cog.command(name="setlogs")
-    async def setlogs_cmd(self, ctx, channel: Any):
-        if not await self._ensure_permission_or_reply(ctx, fluxer.Permissions.MANAGE_CHANNELS, "MANAGE_CHANNELS"):
-            return
-
-        channel_obj = None
-        channel_id = resolve_channel_id(channel)
-        if channel_id is not None:
-            try:
-                channel_obj = await self.bot.fetch_channel(str(channel_id))
-            except (fluxer.NotFound, fluxer.Forbidden):
-                channel_obj = None
-
-        if not channel_obj:
-            await self.respond_and_delete(
-                ctx,
-                embed=self._build_embed("Invalid Channel", "Use a channel mention or ID.", 0xFF0000)
-            )
-            return
-
-        await self.datawrapper.ensure_guild(ctx.guild.id)
-        await self.datawrapper.set_log_channel_id(ctx.guild.id, channel_obj.id)
-
-        await self.respond_and_delete(
-            ctx,
-            embed=self._build_embed(
-                "📝 Mod-Log Channel Set",
-                f"Logs will now be sent to {channel_obj.mention}.",
-                0x32CD32
-            )
-        )
-
     @Cog.command(name="warnings")
     async def warnings(self, ctx, member: Any):
         if not await self._ensure_permission_or_reply(ctx, fluxer.Permissions.MANAGE_MESSAGES, "MANAGE_MESSAGES"):
@@ -152,42 +120,6 @@ class WarnSystemCog(Cog):
         else:
             await ctx.reply(embed=self._build_embed("No Warnings Found", f"No warnings found for <@{user_id}>.", 0x32CD32))
 
-    @Cog.command(name="warn")
-    async def warn_cmd(self, ctx, member: Any, reason: str = "No reason provided"):
-        if not await self._ensure_permission_or_reply(ctx, fluxer.Permissions.MANAGE_MESSAGES, "MANAGE_MESSAGES"):
-            return
-
-        user_id = resolve_user_id(member)
-        if user_id is None:
-            warning_message = await ctx.reply(embed=self._build_embed("Invalid User", "Use a mention or user ID.", 0xFF0000))
-            await delete_after(warning_message, 10)
-            return
-
-        guild_id = ctx.guild.id
-        await self.datawrapper.add_warn(guild_id, user_id, ctx.author.id, reason)
-
-        target_member = await resolve_guild_member(self.bot, ctx, member)
-        display_name = target_member.display_name if target_member else str(user_id)
-        mention = target_member.mention if target_member else f"<@{user_id}>"
-
-        await self.respond_and_delete(ctx, embed=self._build_embed(f"⚠️ Warned {display_name}", f"Reason: {reason}", 0xFFA500))
-
-        if target_member:
-            dm_embed = self._build_embed("⚠️ You've received a warning!", f"Server: **{ctx.guild.name}**\nReason: {reason}")
-            await self.dm_user(target_member, dm_embed)
-
-        log_embed = self._build_embed(
-            "⚠️ User Warned",
-            f"**User:** {mention} ({user_id})\n**Moderator:** {ctx.author.mention} ({ctx.author.id})\n**Reason:** {reason}\n**Timestamp:** <t:{int(fluxer.utils.utcnow().timestamp())}:F>",
-            0xFFA500
-        )
-        if target_member:
-            target_user = getattr(target_member, "user", target_member)
-            avatar = getattr(target_user, "display_avatar", None)
-            avatar_url = getattr(avatar, "url", None)
-            if avatar_url:
-                log_embed.set_thumbnail(url=avatar_url)
-        await self.send_mod_log(ctx.guild, log_embed)
 
     @Cog.command(name="delwarn")
     async def delwarn(self, ctx, member: Any, index: int):

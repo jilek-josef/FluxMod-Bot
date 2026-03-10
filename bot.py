@@ -16,7 +16,7 @@ if hasattr(intents, "message_content"):
     except Exception:
         pass
 
-client = fluxer.Bot(intents=intents, command_prefix='!', retry_forever=True)
+client = fluxer.Bot(intents=intents, command_prefix='fm!', retry_forever=True)
 
 
 @client.event

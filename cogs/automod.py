@@ -35,9 +35,19 @@ class AutoModCog(Cog):
 
         return normalized
 
-    def _is_exempt(self, message: fluxer.Message, exempt_roles: set[str], exempt_channels: set[str]) -> bool:
+    def _is_exempt(
+        self,
+        message: fluxer.Message,
+        exempt_roles: set[str],
+        exempt_channels: set[str],
+        exempt_users: set[str],
+    ) -> bool:
         channel_id = str(getattr(message.channel, "id", ""))
         if channel_id and channel_id in exempt_channels:
+            return True
+
+        user_id = str(getattr(message.author, "id", ""))
+        if user_id and user_id in exempt_users:
             return True
 
         author_roles = getattr(message.author, "roles", []) or []
@@ -134,8 +144,13 @@ class AutoModCog(Cog):
             for rule in rules
             for channel_id in rule.get("exempt_channels", [])
         }
+        exempt_users = {
+            str(user_id)
+            for rule in rules
+            for user_id in rule.get("exempt_users", [])
+        }
 
-        if self._is_exempt(message, exempt_roles, exempt_channels):
+        if self._is_exempt(message, exempt_roles, exempt_channels, exempt_users):
             return
         
         for rule in rules:
