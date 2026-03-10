@@ -10,6 +10,7 @@ from fluxer import Cog
 class AutoModCog(Cog):
     def __init__(self, bot: fluxer.Bot):
         super().__init__(bot)
+        self.bot = bot
         self.datawrapper = DataWrapper()
 
     @staticmethod
@@ -112,6 +113,26 @@ class AutoModCog(Cog):
                 pass
 
         return False, None
+    
+    async def send_automod_log(self, guild: fluxer.Guild, embed: fluxer.Embed):
+        """Send AutoMod logs to the configured guild channel."""
+        guild_id = getattr(guild, "id", None)
+        if guild_id is None:
+            return
+
+        config = await self.datawrapper.get_guild_config(guild_id) or {}
+        channel_id = config.get("automod_log_channel")
+        if not channel_id:
+            return
+
+        try:
+            channel = await self.bot.fetch_channel(str(channel_id))
+            if channel:
+                await channel.send(embed=embed)
+        except fluxer.NotFound:
+            pass
+        except fluxer.Forbidden:
+            pass
 
     
                                                                                  
@@ -168,6 +189,24 @@ class AutoModCog(Cog):
                             f"{message.author.mention}, your message contained prohibited content and was removed ({reason})."
                         )
                     )
+                    # Optionally, log the violation to a mod log channel here.
+                    guild = message.guild
+                    embed = EmbedBuilder.create_embed(
+                        title="AutoMod Violation",
+                        description=(
+                            f"**User:** {message.author.mention} (`{message.author.id}`)\n"
+                            f"**Channel:** {channel.mention} (`{channel.id}`)\n"
+                            f"**Reason:** {reason}\n"
+                            f"**Content:** {message.content}\n"
+                            f"**Time:** <t:{int(message.created_at.timestamp())}:F>"
+                        ),
+                        color=0xFF0000,
+                    )
+                    avatar = getattr(message.author, "display_avatar", None)
+                    avatar_url = getattr(avatar, "url", None)
+                    if avatar_url:
+                        embed.set_thumbnail(url=avatar_url)
+                    await self.send_automod_log(guild, embed)
             except fluxer.Forbidden:
                 pass
             except fluxer.NotFound:
