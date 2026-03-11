@@ -2,6 +2,7 @@ from database.mongo import MongoDB
 
 db = MongoDB()
 guilds = db.collection("guild_settings")
+bot_stats = db.collection("bot_stats")
 
 
 def create_guild(guild_id: int):
@@ -15,6 +16,15 @@ def create_guild(guild_id: int):
         "command_settings": {},
         "warns": []
     })
+
+
+def update_bot_guild_count(count: int) -> None:
+    """Persist current guild count for dashboard usage."""
+    bot_stats.update_one(
+        {"_id": "global"},
+        {"$set": {"guild_count": max(int(count), 0)}},
+        upsert=True,
+    )
 
 
 def get_guild(guild_id: int):
