@@ -136,6 +136,7 @@ class AutoModCog(Cog):
     def handle_prohibited_content(self, content: str, rule: dict):
         content_lower = (content or "").lower()
         rule_name = str(rule.get("name") or rule.get("rule_name") or "AutoMod Rule")
+        rule_name_lower = rule_name.lower()
 
         if not content_lower:
             return False, None
@@ -147,6 +148,9 @@ class AutoModCog(Cog):
         allowed_patterns = self._normalize_pattern_list(rule.get("allowed_patterns", []))
         rule_type = str(rule.get("rule_type", "")).lower()
         pattern_regex = rule.get("pattern")
+        # Caps rules must stay case-sensitive, otherwise [A-Z] can match lowercase
+        # when IGNORECASE is applied.
+        regex_flags = 0 if (rule_type == "caps" or "caps" in rule_name_lower) else re.IGNORECASE
 
         compiled_patterns = []
         for pattern in patterns:
@@ -179,7 +183,7 @@ class AutoModCog(Cog):
         if rule_type == "regex":
             for pattern in patterns:
                 try:
-                    match = re.search(pattern, content, re.IGNORECASE)
+                    match = re.search(pattern, content, regex_flags)
                     if match:
                         return True, {
                             "rule_name": rule_name,
@@ -194,7 +198,7 @@ class AutoModCog(Cog):
         # Support DB rules that store one regex in `pattern`.
         if isinstance(pattern_regex, str) and pattern_regex.strip():
             try:
-                match = re.search(pattern_regex, content, re.IGNORECASE)
+                match = re.search(pattern_regex, content, regex_flags)
                 if match:
                     return True, {
                         "rule_name": rule_name,
