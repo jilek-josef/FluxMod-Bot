@@ -36,6 +36,23 @@ class AutoModCog(Cog):
 
         return normalized
 
+    @staticmethod
+    def _extract_author_role_ids(author) -> set[str]:
+        role_ids: set[str] = set()
+
+        # Common shape: list of Role objects.
+        for role in getattr(author, "roles", []) or []:
+            role_id = getattr(role, "id", role)
+            if role_id is not None:
+                role_ids.add(str(role_id))
+
+        # Some libraries expose raw IDs directly.
+        for role_id in getattr(author, "role_ids", []) or []:
+            if role_id is not None:
+                role_ids.add(str(role_id))
+
+        return role_ids
+
     def _is_exempt(
         self,
         message: fluxer.Message,
@@ -43,16 +60,22 @@ class AutoModCog(Cog):
         exempt_channels: set[str],
         exempt_users: set[str],
     ) -> bool:
-        channel_id = str(getattr(message.channel, "id", ""))
-        if channel_id and channel_id in exempt_channels:
+        channel = getattr(message, "channel", None)
+        channel_id = str(getattr(channel, "id", ""))
+        parent_channel_id = str(
+            getattr(getattr(channel, "parent", None), "id", "")
+            or getattr(channel, "parent_id", "")
+        )
+        if (channel_id and channel_id in exempt_channels) or (
+            parent_channel_id and parent_channel_id in exempt_channels
+        ):
             return True
 
         user_id = str(getattr(message.author, "id", ""))
         if user_id and user_id in exempt_users:
             return True
 
-        author_roles = getattr(message.author, "roles", []) or []
-        author_role_ids = {str(getattr(role, "id", "")) for role in author_roles}
+        author_role_ids = self._extract_author_role_ids(message.author)
         return bool(exempt_roles.intersection(author_role_ids))
 
     def _is_allowed_content(self, content: str, compiled_allowed_patterns):
@@ -187,7 +210,8 @@ class AutoModCog(Cog):
                         embed=EmbedBuilder.error_embed(
                             "Message Deleted",
                             f"{message.author.mention}, your message contained prohibited content and was removed ({reason})."
-                        )
+                        ),
+                        delete_after=5,
                     )
                     # Optionally, log the violation to a mod log channel here.
                     guild = message.guild
