@@ -1,8 +1,10 @@
 import fluxer
 import re
+import asyncio
 
 from utils.embed_builder import EmbedBuilder
 from utils.datawrapper import DataWrapper
+from utils.delete_after import delete_after
 from fluxer import Cog
 
 
@@ -206,13 +208,13 @@ class AutoModCog(Cog):
                 await message.delete()
                 channel = message.channel
                 if channel is not None:
-                    await channel.send(
+                    warning_message = await channel.send(
                         embed=EmbedBuilder.error_embed(
                             "Message Deleted",
                             f"{message.author.mention}, your message contained prohibited content and was removed ({reason})."
-                        ),
-                        delete_after=5,
+                        )
                     )
+                    asyncio.create_task(delete_after(warning_message, 5))
                     # Optionally, log the violation to a mod log channel here.
                     guild = message.guild
                     embed = EmbedBuilder.create_embed(
