@@ -211,7 +211,7 @@ class AutoModCog(Cog):
                     warning_message = await channel.send(
                         embed=EmbedBuilder.error_embed(
                             "Message Deleted",
-                            f"{message.author.mention}, your message contained prohibited content and was removed ({reason})."
+                            f"{message.author.mention}, your message contained prohibited content and was removed."
                         )
                     )
                     asyncio.create_task(delete_after(warning_message, 5))
