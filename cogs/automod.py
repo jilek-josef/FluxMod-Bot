@@ -392,31 +392,42 @@ class AutoModCog(Cog):
             matched_pattern = self._safe_inline(match_info.get("matched_pattern") or "", max_len=220)
             matched_text = self._safe_inline(match_info.get("matched_text") or "")
             highlighted_content = self._highlight_match_in_message(message.content, matched_text)
+            try:
+                rule_severity = int(rule.get("severity", 2))
+            except Exception:
+                rule_severity = 2
+            is_low_severity = rule_severity <= 1
 
             channel = message.channel
             guild = message.guild
-            delete_status = "deleted"
+            delete_status = "log-only-low-severity" if is_low_severity else "deleted"
 
-            try:
-                await message.delete()
+            if not is_low_severity:
+                try:
+                    await message.delete()
+                    log(
+                        f"[AutoMod] Deleted message guild={guild_id} user={getattr(message.author, 'id', 'unknown')} reason={reason}",
+                        "debug",
+                    )
+                    if channel is not None:
+                        warning_message = await channel.send(
+                            embed=EmbedBuilder.error_embed(
+                                "Message Deleted",
+                                f"{message.author.mention}, your message contained prohibited content and was removed."
+                            )
+                        )
+                        asyncio.create_task(delete_after(warning_message, 5))
+                except fluxer.Forbidden:
+                    delete_status = "delete-forbidden"
+                    log(f"[AutoMod] Delete failed: forbidden guild={guild_id}", "debug")
+                except fluxer.NotFound:
+                    delete_status = "delete-not-found"
+                    log(f"[AutoMod] Delete failed: message not found guild={guild_id}", "debug")
+            else:
                 log(
-                    f"[AutoMod] Deleted message guild={guild_id} user={getattr(message.author, 'id', 'unknown')} reason={reason}",
+                    f"[AutoMod] Low severity violation logged only guild={guild_id} user={getattr(message.author, 'id', 'unknown')} rule={matched_rule_name}",
                     "debug",
                 )
-                if channel is not None:
-                    warning_message = await channel.send(
-                        embed=EmbedBuilder.error_embed(
-                            "Message Deleted",
-                            f"{message.author.mention}, your message contained prohibited content and was removed."
-                        )
-                    )
-                    asyncio.create_task(delete_after(warning_message, 5))
-            except fluxer.Forbidden:
-                delete_status = "delete-forbidden"
-                log(f"[AutoMod] Delete failed: forbidden guild={guild_id}", "debug")
-            except fluxer.NotFound:
-                delete_status = "delete-not-found"
-                log(f"[AutoMod] Delete failed: message not found guild={guild_id}", "debug")
 
             # Always attempt to write a mod log even when deletion fails.
             if channel is not None and guild is not None:
@@ -426,6 +437,7 @@ class AutoModCog(Cog):
                         f"**User:** {message.author.mention} (`{message.author.id}`)\n"
                         f"**Channel:** {channel.mention} (`{channel.id}`)\n"
                         f"**Rule:** `{matched_rule_name}`\n"
+                        f"**Severity:** `{rule_severity}`\n"
                         f"**Match Type:** `{match_type}`\n"
                         f"**Matched Pattern:** `{matched_pattern or 'N/A'}`\n"
                         f"**Matched Text:** `{matched_text or 'N/A'}`\n"

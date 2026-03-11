@@ -31,6 +31,11 @@ def _normalize_rule(rule: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         threshold = 1
 
+    try:
+        severity = int(rule.get("severity", 2))
+    except Exception:
+        severity = 2
+
     return {
         "id": str(rule.get("id") or uuid.uuid4()),
         "name": rule_name,
@@ -38,6 +43,7 @@ def _normalize_rule(rule: Dict[str, Any]) -> Dict[str, Any]:
         "rule_name": rule_name,
         "pattern": pattern if isinstance(pattern, str) else "",
         "action": action,
+        "severity": severity if 1 <= severity <= 5 else 2,
         "keywords": keywords,
         "allowed_patterns": allowed_patterns,
         "threshold": threshold if threshold > 0 else 1,
