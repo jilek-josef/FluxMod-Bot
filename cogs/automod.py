@@ -41,7 +41,7 @@ class AutoModCog(Cog):
         return normalized
 
     @staticmethod
-    def _extract_author_role_ids(author) -> set[str]:
+    def _extract_author_role_ids(author, member=None) -> set[str]:
         role_ids: set[str] = set()
 
         # Common shape: list of Role objects.
@@ -54,6 +54,17 @@ class AutoModCog(Cog):
         for role_id in getattr(author, "role_ids", []) or []:
             if role_id is not None:
                 role_ids.add(str(role_id))
+
+        # Some payloads provide richer member role info separate from author.
+        if member is not None:
+            for role in getattr(member, "roles", []) or []:
+                role_id = getattr(role, "id", role)
+                if role_id is not None:
+                    role_ids.add(str(role_id))
+
+            for role_id in getattr(member, "role_ids", []) or []:
+                if role_id is not None:
+                    role_ids.add(str(role_id))
 
         return role_ids
 
@@ -79,7 +90,10 @@ class AutoModCog(Cog):
         if user_id and user_id in exempt_users:
             return True
 
-        author_role_ids = self._extract_author_role_ids(message.author)
+        author_role_ids = self._extract_author_role_ids(
+            message.author,
+            getattr(message, "member", None),
+        )
         return bool(exempt_roles.intersection(author_role_ids))
 
     def _is_allowed_content(self, content: str, compiled_allowed_patterns):
@@ -346,17 +360,17 @@ class AutoModCog(Cog):
         exempt_roles = {
             str(role_id)
             for rule in rules
-            for role_id in rule.get("exempt_roles", [])
+            for role_id in (rule.get("exempt_roles", []) + rule.get("exempt_role_ids", []))
         }
         exempt_channels = {
             str(channel_id)
             for rule in rules
-            for channel_id in rule.get("exempt_channels", [])
+            for channel_id in (rule.get("exempt_channels", []) + rule.get("exempt_channel_ids", []))
         }
         exempt_users = {
             str(user_id)
             for rule in rules
-            for user_id in rule.get("exempt_users", [])
+            for user_id in (rule.get("exempt_users", []) + rule.get("exempt_user_ids", []))
         }
 
         if self._is_exempt(message, exempt_roles, exempt_channels, exempt_users):
