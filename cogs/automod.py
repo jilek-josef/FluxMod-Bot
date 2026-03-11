@@ -119,13 +119,13 @@ class AutoModCog(Cog):
         if rule_type == "keyword" or (not rule_type and patterns):
             for pattern, regex in compiled_patterns:
                 if regex.search(content_lower):
-                    return True, f"keyword: `{pattern}`"
+                    return True, "Matched AutoMod rule"
 
         if rule_type == "regex":
             for pattern in patterns:
                 try:
                     if re.search(pattern, content, re.IGNORECASE):
-                        return True, f"regex: `{pattern}`"
+                        return True, "Matched AutoMod rule"
                 except re.error:
                     continue
 
@@ -133,7 +133,7 @@ class AutoModCog(Cog):
         if isinstance(pattern_regex, str) and pattern_regex.strip():
             try:
                 if re.search(pattern_regex, content, re.IGNORECASE):
-                    return True, f"pattern: `{pattern_regex}`"
+                    return True, "Matched AutoMod rule"
             except re.error:
                 pass
 
