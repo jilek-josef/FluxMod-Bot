@@ -240,6 +240,56 @@ class AutoModCog(Cog):
 
         return None
 
+    @staticmethod
+    def _resolve_role_ids_from_payload(payload: Any) -> list[str]:
+        candidate_keys = (
+            "staff_role_ids",
+            "staff_roles",
+            "staffRoleIds",
+            "staffRoles",
+            "staff_ping_role_ids",
+            "staffPingRoleIds",
+            "automod_ping_role_ids",
+            "automodPingRoleIds",
+        )
+
+        if isinstance(payload, dict):
+            for key in candidate_keys:
+                if key not in payload:
+                    continue
+
+                raw_value = payload.get(key)
+                if isinstance(raw_value, list):
+                    return [str(item).strip() for item in raw_value if str(item).strip()]
+                if isinstance(raw_value, str):
+                    return [part.strip() for part in raw_value.split(",") if part.strip()]
+
+            for value in payload.values():
+                if isinstance(value, dict):
+                    nested = AutoModCog._resolve_role_ids_from_payload(value)
+                    if nested:
+                        return nested
+
+        return []
+
+    async def _resolve_automod_staff_ping_roles(self, guild_id: int) -> list[str]:
+        config = await self.datawrapper.get_guild_config(guild_id) or {}
+        role_ids = self._resolve_role_ids_from_payload(config)
+
+        if not role_ids:
+            guild_data = await self.datawrapper.get_guild_data(guild_id) or {}
+            role_ids = self._resolve_role_ids_from_payload(guild_data)
+
+        cleaned = []
+        for role_id in role_ids:
+            normalized = str(role_id).strip()
+            if normalized and normalized not in cleaned:
+                cleaned.append(normalized)
+            if len(cleaned) >= 5:
+                break
+
+        return cleaned
+
     async def _resolve_automod_log_channel_id(self, guild_id: int) -> str | None:
         # Primary path: command_settings from DataWrapper.get_guild_config.
         config = await self.datawrapper.get_guild_config(guild_id) or {}
@@ -264,6 +314,7 @@ class AutoModCog(Cog):
             return False
 
         channel_id = await self._resolve_automod_log_channel_id(guild_id)
+        staff_ping_role_ids = await self._resolve_automod_staff_ping_roles(guild_id)
 
         if not channel_id:
             log(f"[AutoMod] Log skipped: no automod_log_channel configured for guild={guild_id}", "debug")
@@ -288,7 +339,11 @@ class AutoModCog(Cog):
                 log(f"[AutoMod] Fetch lookup guild={guild_id} channel={channel_id} success={'yes' if channel else 'no'}", "debug")
 
             if channel:
-                await channel.send(embed=embed)
+                mention_content = " ".join([f"<@&{role_id}>" for role_id in staff_ping_role_ids])
+                if mention_content:
+                    await channel.send(content=mention_content, embed=embed)
+                else:
+                    await channel.send(embed=embed)
                 log(f"[AutoMod] Log sent guild={guild_id} channel={channel_id}", "debug")
                 return True
         except fluxer.NotFound:
