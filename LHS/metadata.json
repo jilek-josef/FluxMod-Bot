@@ -1,0 +1,126 @@
+{
+  "epoch": 11,
+  "val_metrics": {
+    "dangerous_content_confusion": {
+      "TN": 788601,
+      "FP": 4131,
+      "FN": 11181,
+      "TP": 12008
+    },
+    "dangerous_content_acc": 0.9812334772606661,
+    "dangerous_content_precision": 0.7440361856372761,
+    "dangerous_content_recall": 0.5178317305619043,
+    "dangerous_content_f1": 0.6106590724165989,
+    "dangerous_content_positive_rate": 0.028420643665256807,
+    "hate_speech_confusion": {
+      "TN": 723046,
+      "FP": 8255,
+      "FN": 24785,
+      "TP": 59835
+    },
+    "hate_speech_acc": 0.9595058835352932,
+    "hate_speech_precision": 0.8787634013805258,
+    "hate_speech_recall": 0.7071023398723706,
+    "hate_speech_f1": 0.7836421976294938,
+    "hate_speech_positive_rate": 0.10371102104247838,
+    "harassment_confusion": {
+      "TN": 782869,
+      "FP": 5959,
+      "FN": 12190,
+      "TP": 14903
+    },
+    "harassment_acc": 0.9777564249480035,
+    "harassment_precision": 0.714361039210047,
+    "harassment_recall": 0.5500682833204149,
+    "harassment_f1": 0.6215410280471275,
+    "harassment_positive_rate": 0.033205420622829905,
+    "sexually_explicit_confusion": {
+      "TN": 729890,
+      "FP": 10274,
+      "FN": 13128,
+      "TP": 62629
+    },
+    "sexually_explicit_acc": 0.9713183016493019,
+    "sexually_explicit_precision": 0.8590730148279221,
+    "sexually_explicit_recall": 0.8267090829890307,
+    "sexually_explicit_f1": 0.8425803847706175,
+    "sexually_explicit_positive_rate": 0.09284844978864375,
+    "toxicity_confusion": {
+      "TN": 568202,
+      "FP": 10708,
+      "FN": 23393,
+      "TP": 213618
+    },
+    "toxicity_acc": 0.9582055125434938,
+    "toxicity_precision": 0.95226589873666,
+    "toxicity_recall": 0.9012999396652476,
+    "toxicity_f1": 0.9260822348955319,
+    "toxicity_positive_rate": 0.29048277958282726,
+    "severe_toxicity_confusion": {
+      "TN": 813626,
+      "FP": 466,
+      "FN": 819,
+      "TP": 1010
+    },
+    "severe_toxicity_acc": 0.998425092625389,
+    "severe_toxicity_precision": 0.6842818428184282,
+    "severe_toxicity_recall": 0.5522143247676325,
+    "severe_toxicity_f1": 0.6111951588502269,
+    "severe_toxicity_positive_rate": 0.0022416385900105524,
+    "threat_confusion": {
+      "TN": 807481,
+      "FP": 1611,
+      "FN": 2515,
+      "TP": 4314
+    },
+    "threat_acc": 0.994943137877319,
+    "threat_precision": 0.7281012658227848,
+    "threat_recall": 0.6317176746229316,
+    "threat_f1": 0.6764936490512781,
+    "threat_positive_rate": 0.00836968284919741,
+    "insult_confusion": {
+      "TN": 723033,
+      "FP": 12365,
+      "FN": 14330,
+      "TP": 66193
+    },
+    "insult_acc": 0.9672823717002014,
+    "insult_precision": 0.8426003716998905,
+    "insult_recall": 0.8220384238043789,
+    "insult_f1": 0.8321924051269479,
+    "insult_positive_rate": 0.09868970157650067,
+    "identity_attack_confusion": {
+      "TN": 791874,
+      "FP": 3020,
+      "FN": 5851,
+      "TP": 15176
+    },
+    "identity_attack_acc": 0.9891276238753507,
+    "identity_attack_precision": 0.8340294570235216,
+    "identity_attack_recall": 0.7217387168878109,
+    "identity_attack_f1": 0.773831680391607,
+    "identity_attack_positive_rate": 0.025770877327584412,
+    "phish_confusion": {
+      "TN": 40651,
+      "FP": 189,
+      "FN": 147,
+      "TP": 4160
+    },
+    "phish_acc": 0.9925576450262475,
+    "phish_precision": 0.9565417337318924,
+    "phish_recall": 0.965869514743441,
+    "phish_f1": 0.9611829944547134,
+    "phish_positive_rate": 0.09539947283318936,
+    "spam_confusion": {
+      "TN": 20465,
+      "FP": 804,
+      "FN": 671,
+      "TP": 23207
+    },
+    "spam_acc": 0.9673289476598667,
+    "spam_precision": 0.9665153471325643,
+    "spam_recall": 0.9718988189965658,
+    "spam_f1": 0.9691996074255048,
+    "spam_positive_rate": 0.5288945001882739
+  }
+}

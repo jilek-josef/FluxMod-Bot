@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Any
 from datetime import datetime
 
 from database.guilds import (
@@ -8,6 +8,13 @@ from database.guilds import (
     update_command_settings,
     get_log_channel_id,
     set_log_channel_id,
+    get_lhs_settings,
+    update_lhs_settings,
+    set_lhs_enabled,
+    set_lhs_category,
+    set_lhs_exemptions,
+    set_lhs_channel_override,
+    delete_lhs_channel_override,
 )
 from database.automod import (
     get_rules,
@@ -27,6 +34,7 @@ from database.warns import (
     get_warns_grouped_by_guild_user,
     delete_warns_older_than,
 )
+from utils.lhs_client import GuildLHSSettings, DEFAULT_LHS_SETTINGS
 
 
 class DataWrapper:
@@ -144,3 +152,59 @@ class DataWrapper:
     async def get_log_channel_id(self, guild_id: int) -> int | None:
 
         return get_log_channel_id(guild_id)
+
+    # LHS (AI Moderation) methods
+
+    async def get_lhs_settings(self, guild_id: int) -> GuildLHSSettings:
+        """
+        Get LHS settings for a guild as a GuildLHSSettings object.
+        """
+        settings_dict = get_lhs_settings(guild_id)
+        settings_dict["guild_id"] = guild_id
+        return GuildLHSSettings.from_dict(settings_dict)
+
+    async def update_lhs_settings(self, guild_id: int, settings: Dict[str, Any]) -> None:
+        """
+        Update LHS settings for a guild.
+        """
+        update_lhs_settings(guild_id, settings)
+
+    async def set_lhs_enabled(self, guild_id: int, enabled: bool) -> None:
+        """
+        Enable or disable LHS for a guild.
+        """
+        set_lhs_enabled(guild_id, enabled)
+
+    async def set_lhs_category(self, guild_id: int, category: str, 
+                               enabled: bool = None, threshold: float = None) -> None:
+        """
+        Update a specific category setting for LHS.
+        """
+        set_lhs_category(guild_id, category, enabled, threshold)
+
+    async def set_lhs_exemptions(self, guild_id: int,
+                                  roles: List[int] = None,
+                                  channels: List[int] = None,
+                                  users: List[int] = None) -> None:
+        """
+        Update LHS exemption lists.
+        """
+        set_lhs_exemptions(
+            guild_id,
+            roles=roles,
+            channels=channels,
+            users=users,
+        )
+
+    async def set_lhs_channel_override(self, guild_id: int, channel_id: int, 
+                                       override: Dict[str, Any]) -> None:
+        """
+        Set per-channel LHS override settings.
+        """
+        set_lhs_channel_override(guild_id, channel_id, override)
+
+    async def delete_lhs_channel_override(self, guild_id: int, channel_id: int) -> None:
+        """
+        Remove per-channel LHS override settings.
+        """
+        delete_lhs_channel_override(guild_id, channel_id)

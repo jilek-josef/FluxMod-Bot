@@ -1,0 +1,6 @@
+# Model files - downloaded on demand
+*.safetensors
+*.pt
+*.pth
+*.bin
+*.ckpt

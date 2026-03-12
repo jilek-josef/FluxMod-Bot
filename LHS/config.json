@@ -1,0 +1,14 @@
+{
+  "vocab_size": 257,
+  "embed_dim": 128,
+  "tcn_channels": [
+    256,
+    384,
+    512
+  ],
+  "performer_dim": 512,
+  "performer_depth": 4,
+  "performer_heads": 8,
+  "performer_dim_head": 64,
+  "dropout": 0.25
+}
