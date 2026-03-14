@@ -18,6 +18,23 @@ DEFAULT_LHS_SETTINGS = {
     "severity": 2,
     "log_only_mode": False,
     "channel_overrides": {},
+    "image_moderation": {
+        "enabled": False,
+        "scan_attachments": True,
+        "scan_embeds": True,
+        # All filters disabled by default - user must explicitly enable each
+        # Each filter has its own action (delete, warn, kick, ban)
+        "filters": {
+            "general": {"enabled": False, "threshold": 0.2, "action": "delete"},
+            "sensitive": {"enabled": False, "threshold": 0.8, "action": "delete"},
+            "questionable": {"enabled": False, "threshold": 0.2, "action": "delete"},
+            "explicit": {"enabled": False, "threshold": 0.2, "action": "delete"},
+            "guro": {"enabled": False, "threshold": 0.3, "action": "delete"},
+            "realistic": {"enabled": False, "threshold": 0.25, "action": "delete"},
+            "csam_check": {"enabled": False, "threshold": 0.09, "action": "ban"},
+        },
+        "log_only_mode": False,
+    },
 }
 
 

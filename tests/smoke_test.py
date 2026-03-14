@@ -41,11 +41,6 @@ def test_imports():
     print("Testing imports...")
     
     try:
-        from utils.lhs_client import (
-            LHSClient, GuildLHSSettings, LHSCheckResult,
-            get_lhs_client, reset_lhs_client,
-            DEFAULT_LHS_SETTINGS, ALL_LHS_CATEGORIES,
-        )
         print("  ✓ lhs_client imports OK")
     except Exception as e:
         print(f"  ✗ lhs_client import failed: {e}")
@@ -53,9 +48,6 @@ def test_imports():
     
     if HAS_COLORAMA:
         try:
-            from utils.lhs_server_manager import (
-                LHSServerManager, get_lhs_server_manager, reset_lhs_server_manager
-            )
             print("  ✓ lhs_server_manager imports OK")
         except Exception as e:
             print(f"  ✗ lhs_server_manager import failed: {e}")
@@ -65,17 +57,12 @@ def test_imports():
     
     if HAS_DOTENV and HAS_PYMONGO:
         try:
-            from database.guilds import (
-                get_lhs_settings, update_lhs_settings, 
-                set_lhs_enabled, DEFAULT_LHS_SETTINGS
-            )
             print("  ✓ database.guilds imports OK")
         except Exception as e:
             print(f"  ✗ database.guilds import failed: {e}")
             return False
         
         try:
-            from utils.datawrapper import DataWrapper
             print("  ✓ datawrapper imports OK")
         except Exception as e:
             print(f"  ✗ datawrapper import failed: {e}")

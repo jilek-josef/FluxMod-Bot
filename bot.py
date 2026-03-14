@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import os
 import signal
 from utils.log import log
-from utils.lhs_server_manager import get_lhs_server_manager
+from utils.lhs_server_manager import get_lhs_server_manager, get_image_moderation_server_manager
 
 
 load_dotenv()
@@ -20,8 +20,9 @@ if hasattr(intents, "message_content"):
 
 client = fluxer.Bot(intents=intents, command_prefix='fm!', retry_forever=True)
 
-# LHS Server Manager
+# LHS Server Managers
 lhs_manager = get_lhs_server_manager()
+image_manager = get_image_moderation_server_manager()
 
 
 @client.event
@@ -33,21 +34,41 @@ async def on_ready():
         log(f"System online as {user} ({user.id})", "success")
     log(f"Connected to {len(client.guilds)} guilds.", "info")
     
-    # Start LHS server if not already running (and not using external server)
+    # Start LHS text moderation server if not already running (and not using external server)
     lhs_server_url = os.environ.get("LHS_SERVER_URL", "")
     is_external = lhs_server_url and not any(local in lhs_server_url for local in ["localhost", "127.0.0.1", "0.0.0.0"])
     
     if not is_external and not lhs_manager.is_running():
-        log("[LHS] Auto-starting inference server...", "info")
+        log("[LHS] Auto-starting text inference server...", "info")
         started = await lhs_manager.start(wait_for_ready=True, timeout=120.0)
         if started:
-            log(f"[LHS] Inference server ready at {lhs_manager.server_url}", "success")
+            log(f"[LHS] Text inference server ready at {lhs_manager.server_url}", "success")
         else:
-            log("[LHS] Failed to start inference server - AI moderation will be unavailable", "warn")
+            log("[LHS] Failed to start text inference server - AI text moderation will be unavailable", "warn")
     elif is_external:
-        log(f"[LHS] Using external inference server at {lhs_server_url}", "info")
+        log(f"[LHS] Using external text inference server at {lhs_server_url}", "info")
     else:
-        log(f"[LHS] Inference server already running at {lhs_manager.server_url}", "info")
+        log(f"[LHS] Text inference server already running at {lhs_manager.server_url}", "info")
+    
+    # Start image moderation server (non-blocking)
+    if not image_manager.is_running():
+        log("[Image Mod] Auto-starting image inference server (background)...", "info")
+        # Start without waiting - let it load in background
+        asyncio.create_task(_start_image_server_async())
+    else:
+        log(f"[Image Mod] Image inference server already running at {image_manager.server_url}", "info")
+
+
+async def _start_image_server_async():
+    """Start image server in background without blocking on_ready"""
+    try:
+        started = await image_manager.start(wait_for_ready=True, timeout=180.0, auto_download_model=True)
+        if started:
+            log(f"[Image Mod] Image inference server ready at {image_manager.server_url}", "success")
+        else:
+            log("[Image Mod] Failed to start image inference server - image moderation will be unavailable", "warn")
+    except Exception as e:
+        log(f"[Image Mod] Error starting server: {e}", "error")
 
 
 async def load_cogs():
@@ -75,11 +96,14 @@ async def load_cogs():
 
 
 async def graceful_shutdown():
-    """Handle graceful shutdown including LHS server"""
+    """Handle graceful shutdown including LHS servers"""
     log("Shutting down gracefully...", "info")
     
-    # Stop LHS server
+    # Stop LHS text server
     await lhs_manager.stop()
+    
+    # Stop image moderation server
+    await image_manager.stop()
     
     # Close bot connection
     await client.close()

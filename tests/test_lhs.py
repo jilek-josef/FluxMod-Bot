@@ -5,9 +5,8 @@ Run with: python -m pytest tests/test_lhs.py -v
 Or: python tests/test_lhs.py
 """
 
-import asyncio
 import unittest
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
+from unittest.mock import Mock, patch, AsyncMock
 import sys
 import os
 
@@ -15,7 +14,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.lhs_client import (
-    LHSClient,
     GuildLHSSettings,
     LHSCheckResult,
     get_lhs_client,
@@ -24,7 +22,7 @@ from utils.lhs_client import (
     ALL_LHS_CATEGORIES,
     CATEGORY_DISPLAY_NAMES,
 )
-from utils.lhs_server_manager import LHSServerManager, get_lhs_server_manager, reset_lhs_server_manager
+from utils.lhs_server_manager import LHSServerManager, reset_lhs_server_manager
 
 
 class TestLHSCheckResult(unittest.TestCase):

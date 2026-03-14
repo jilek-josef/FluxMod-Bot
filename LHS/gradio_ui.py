@@ -6,8 +6,7 @@ Simple web UI for testing the inference server.
 
 import gradio as gr
 import requests
-import json
-from typing import List, Tuple
+from typing import Tuple
 import time
 
 # Default server URL

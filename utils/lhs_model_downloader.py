@@ -4,7 +4,6 @@ LHS Model Downloader
 Downloads the model file on-demand from ModelScope if not present locally.
 """
 
-import os
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -77,7 +76,7 @@ def download_model(
     for try_url in urls_to_try:
         try:
             print(f"[LHS Downloader] Downloading model from {try_url}...")
-            print(f"[LHS Downloader] This may take a few minutes (approx 109MB)...", flush=True)
+            print("[LHS Downloader] This may take a few minutes (approx 109MB)...", flush=True)
             
             # Create request with headers
             headers = {
@@ -228,3 +227,178 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\nFailed: {e}")
         sys.exit(1)
+# ... (existing content remains the same)
+
+async def ensure_model_async() -> Path:
+    """Async version of ensure_model"""
+    model_path = get_model_path()
+    
+    if model_exists():
+        return model_path
+    
+    print("[LHS] Model not found locally, downloading...")
+    return await download_model_async()
+
+
+# ============================================================================
+# Image Moderation Model Downloads
+# ============================================================================
+
+IMAGE_MODEL_URL = "https://modelscope.ai/models/LRimuru/animetimm_caformer_b36.dbv4-full_Quantized_Q8/resolve/master/model.safetensors"
+IMAGE_CONFIG_URL = "https://modelscope.ai/models/LRimuru/animetimm_caformer_b36.dbv4-full_Quantized_Q8/resolve/master/config.json"
+
+# Expected file size (~400MB quantized)
+EXPECTED_IMAGE_MODEL_SIZE = 400 * 1024 * 1024  # 400MB
+
+
+def get_image_model_path() -> Path:
+    """Get the path where image model should be stored"""
+    lhs_dir = Path(__file__).parent.parent / "LHS"
+    return lhs_dir / "image_model.safetensors"
+
+
+def get_image_config_path() -> Path:
+    """Get the path where image model config should be stored"""
+    lhs_dir = Path(__file__).parent.parent / "LHS"
+    return lhs_dir / "image_model_config.json"
+
+
+def image_model_exists() -> bool:
+    """Check if image model file exists and has reasonable size"""
+    model_path = get_image_model_path()
+    if not model_path.exists():
+        return False
+    
+    size = model_path.stat().st_size
+    return size > 100 * 1024 * 1024  # At least 100MB
+
+
+def download_image_model(
+    progress_callback=None,
+    timeout: int = 600,
+) -> Path:
+    """
+    Download the image moderation model file.
+    
+    Args:
+        progress_callback: Optional callback(bytes_downloaded, total_bytes)
+        timeout: Download timeout in seconds
+    
+    Returns:
+        Path to downloaded model
+    
+    Raises:
+        ModelDownloadError: If download fails
+    """
+    model_path = get_image_model_path()
+    config_path = get_image_config_path()
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+    
+    try:
+        # Download model
+        print(f"[Image Downloader] Downloading model from {IMAGE_MODEL_URL}...")
+        print("[Image Downloader] This may take a few minutes (approx 400MB)...", flush=True)
+        
+        request = urllib.request.Request(IMAGE_MODEL_URL, headers=headers)
+        
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            total_size = int(response.headers.get('Content-Length', 0))
+            
+            chunk_size = 8192
+            downloaded = 0
+            last_printed_mb = 0
+            
+            with open(model_path, 'wb') as f:
+                while True:
+                    chunk = response.read(chunk_size)
+                    if not chunk:
+                        break
+                    
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    
+                    # Progress callback
+                    if progress_callback:
+                        progress_callback(downloaded, total_size)
+                    
+                    # Print progress every 10MB
+                    downloaded_mb = downloaded // (1024 * 1024)
+                    if downloaded_mb >= last_printed_mb + 10:
+                        if total_size > 0:
+                            percent = (downloaded / total_size) * 100
+                            print(f"[Image Downloader] Downloaded: {downloaded_mb}MB / {total_size // (1024 * 1024)}MB ({percent:.1f}%)", flush=True)
+                        else:
+                            print(f"[Image Downloader] Downloaded: {downloaded_mb}MB", flush=True)
+                        last_printed_mb = downloaded_mb
+        
+        print(f"[Image Downloader] Model download complete: {model_path}", flush=True)
+        
+        # Download config
+        print(f"[Image Downloader] Downloading config...")
+        config_request = urllib.request.Request(IMAGE_CONFIG_URL, headers=headers)
+        with urllib.request.urlopen(config_request, timeout=60) as response:
+            with open(config_path, 'wb') as f:
+                f.write(response.read())
+        print(f"[Image Downloader] Config download complete: {config_path}", flush=True)
+        
+        return model_path
+        
+    except urllib.error.HTTPError as e:
+        raise ModelDownloadError(f"HTTP {e.code}: {e.reason}")
+    except urllib.error.URLError as e:
+        raise ModelDownloadError(f"URL Error: {e.reason}")
+    except Exception as e:
+        # Clean up partial download
+        if model_path.exists():
+            model_path.unlink()
+        raise ModelDownloadError(f"Download failed: {e}")
+
+
+async def download_image_model_async(
+    progress_callback=None,
+    timeout: int = 600,
+) -> Path:
+    """
+    Async wrapper for download_image_model.
+    
+    Runs the download in a thread pool to not block the event loop.
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None,
+        lambda: download_image_model(progress_callback, timeout)
+    )
+
+
+def ensure_image_model() -> Path:
+    """
+    Ensure image model exists, downloading if necessary.
+    
+    Returns:
+        Path to model file
+    
+    Raises:
+        ModelDownloadError: If model cannot be obtained
+    """
+    model_path = get_image_model_path()
+    
+    if image_model_exists():
+        return model_path
+    
+    print("[Image Mod] Model not found locally, downloading...")
+    return download_image_model()
+
+
+async def ensure_image_model_async() -> Path:
+    """Async version of ensure_image_model"""
+    model_path = get_image_model_path()
+    
+    if image_model_exists():
+        return model_path
+    
+    print("[Image Mod] Model not found locally, downloading...")
+    return await download_image_model_async()

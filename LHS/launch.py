@@ -5,9 +5,7 @@ Launcher script for the inference server and Gradio UI.
 
 import subprocess
 import sys
-import os
 import time
-import signal
 import argparse
 
 

@@ -34,7 +34,7 @@ from database.warns import (
     get_warns_grouped_by_guild_user,
     delete_warns_older_than,
 )
-from utils.lhs_client import GuildLHSSettings, DEFAULT_LHS_SETTINGS
+from utils.lhs_client import GuildLHSSettings
 
 
 class DataWrapper:

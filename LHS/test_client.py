@@ -36,7 +36,7 @@ def test_predict(text: str, threshold: float = 0.5):
         start = time.time()
         response = requests.post(
             f"{SERVER_URL}/predict",
-            json={"text": text, "threshold": threshold},
+            json={"text": text},  # No threshold parameter - server returns raw logits
             timeout=10
         )
         elapsed = (time.time() - start) * 1000
@@ -47,17 +47,32 @@ def test_predict(text: str, threshold: float = 0.5):
         
         result = response.json()
         print(f"  Time: {elapsed:.2f}ms (inference: {result.get('inference_time_ms', 0):.2f}ms)")
-        print(f"  Harmful: {result['is_harmful']}")
         
-        if result['detected_categories']:
-            print(f"  Detected: {', '.join(result['detected_categories'])}")
+        logits = result.get('logits', [])
+        probs = result.get('probabilities', [])
+        
+        # Apply threshold client-side
+        label_names = ['dangerous_content', 'hate_speech', 'harassment', 'sexually_explicit',
+                       'toxicity', 'severe_toxicity', 'threat', 'insult', 'identity_attack',
+                       'phish', 'spam']
+        
+        detected = []
+        for i, (name, prob) in enumerate(zip(label_names, probs)):
+            if prob >= threshold:
+                detected.append(name)
+        
+        is_harmful = len(detected) > 0
+        print(f"  Harmful: {is_harmful}")
+        
+        if detected:
+            print(f"  Detected: {', '.join(detected)}")
         
         # Show top 3 scores
-        preds = result['predictions']
-        top3 = sorted(preds.items(), key=lambda x: x[1]['confidence'], reverse=True)[:3]
-        print(f"  Top 3 scores:")
-        for name, data in top3:
-            print(f"    {name}: {data['confidence']:.3f}")
+        top3 = sorted(zip(label_names, probs), key=lambda x: x[1], reverse=True)[:3]
+        print("  Top 3 scores:")
+        for name, prob in top3:
+            status = "✓" if prob >= threshold else " "
+            print(f"    [{status}] {name}: {prob:.3f}")
         
         return result
     
@@ -74,7 +89,7 @@ def test_predict_batch(texts: List[str], threshold: float = 0.5):
         start = time.time()
         response = requests.post(
             f"{SERVER_URL}/predict_batch",
-            json={"texts": texts, "threshold": threshold},
+            json={"texts": texts},  # No threshold parameter
             timeout=30
         )
         elapsed = (time.time() - start) * 1000
@@ -87,7 +102,19 @@ def test_predict_batch(texts: List[str], threshold: float = 0.5):
         print(f"  Total time: {elapsed:.2f}ms")
         print(f"  Throughput: {len(texts) / (elapsed/1000):.1f} texts/sec")
         
-        harmful_count = sum(1 for r in result['results'] if r['is_harmful'])
+        # Count harmful based on threshold applied client-side
+        label_names = ['dangerous_content', 'hate_speech', 'harassment', 'sexually_explicit',
+                       'toxicity', 'severe_toxicity', 'threat', 'insult', 'identity_attack',
+                       'phish', 'spam']
+        
+        harmful_count = 0
+        for r in result['results']:
+            probs = r.get('probabilities', [])
+            for prob in probs:
+                if prob >= threshold:
+                    harmful_count += 1
+                    break
+        
         print(f"  Harmful: {harmful_count}/{len(texts)}")
         
         return result
@@ -113,7 +140,7 @@ def test_concurrent(num_requests: int = 50):
         try:
             response = requests.post(
                 f"{SERVER_URL}/predict",
-                json={"text": text, "threshold": 0.5},
+                json={"text": text},  # No threshold parameter
                 timeout=30
             )
             return response.status_code == 200
@@ -136,16 +163,19 @@ def test_concurrent(num_requests: int = 50):
 
 
 def main():
+    global SERVER_URL
+    
     import argparse
     
     parser = argparse.ArgumentParser(description="Test Inference Server")
     parser.add_argument("--url", default=SERVER_URL, help="Server URL")
     parser.add_argument("--concurrent", type=int, default=0, help="Run concurrent test with N requests")
+    parser.add_argument("--threshold", type=float, default=0.5, help="Threshold for detection (client-side)")
     
     args = parser.parse_args()
     
-    global SERVER_URL
     SERVER_URL = args.url
+    threshold = args.threshold
     
     print("="*60)
     print("INFERENCE SERVER TEST CLIENT")
@@ -170,11 +200,11 @@ def main():
     ]
     
     for text in test_cases:
-        test_predict(text)
+        test_predict(text, threshold=threshold)
         time.sleep(0.1)  # Small delay between requests
     
     # Test batch
-    test_predict_batch(test_cases)
+    test_predict_batch(test_cases, threshold=threshold)
     
     # Test concurrent if requested
     if args.concurrent > 0:

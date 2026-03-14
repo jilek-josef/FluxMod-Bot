@@ -1,27 +1,24 @@
 """
-Multi-Task Inference Server v4
+Multi-Task Inference Server v5
 ==============================
 High-performance inference server with dynamic batching.
 
 Features:
 - Concurrent request handling via async queue
 - Dynamic batching (automatically batches requests from queue)
-- Configurable batch size and timeout
+- Returns raw logits/probabilities - threshold handling by caller
 - FastAPI for HTTP API
 """
 
 import torch
 import torch.nn as nn
-import numpy as np
 import asyncio
 import time
 import os
-import sys
 import json
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
-from collections import deque
 import logging
 from contextlib import asynccontextmanager
 
@@ -60,23 +57,22 @@ logger = logging.getLogger(__name__)
 
 class PredictRequest(BaseModel):
     text: str
-    threshold: float = 0.5
 
 
 class PredictResponse(BaseModel):
-    predictions: Dict[str, Dict[str, Any]]
-    detected_categories: List[str]
-    is_harmful: bool
+    """Returns raw logits/probabilities - threshold handling is done by caller"""
+    logits: List[float]  # Raw logits (11 values)
+    probabilities: List[float]  # Sigmoid probabilities (11 values)
     inference_time_ms: float
 
 
 class BatchPredictRequest(BaseModel):
     texts: List[str]
-    threshold: float = 0.5
 
 
 class BatchPredictResponse(BaseModel):
-    results: List[Dict[str, Any]]
+    """Returns raw logits/probabilities for each text"""
+    results: List[Dict[str, Any]]  # Each result has logits and probabilities
     batch_size: int
     inference_time_ms: float
 
@@ -93,7 +89,6 @@ class HealthResponse(BaseModel):
 class InferenceRequest:
     """Internal inference request with future for async result."""
     text: str
-    threshold: float
     future: asyncio.Future
     timestamp: float = field(default_factory=time.time)
 
@@ -355,8 +350,8 @@ class ModelWrapper:
         
         raise FileNotFoundError(f"No model found in directory: {path}")
     
-    def predict_batch(self, texts: List[str], threshold: float = 0.5) -> List[Dict]:
-        """Run batch inference."""
+    def predict_batch(self, texts: List[str]) -> List[Dict]:
+        """Run batch inference - returns raw logits and probabilities."""
         if not texts:
             return []
         
@@ -378,25 +373,13 @@ class ModelWrapper:
             logits = self.model(input_tensor, length_tensor)
             probs = torch.sigmoid(logits).cpu().numpy()
         
-        # Format results
+        # Format results - return raw logits and probabilities
         results = []
         for i in range(len(texts)):
-            predictions = {}
-            detected = []
-            
-            for j, name in enumerate(self.LABEL_NAMES):
-                is_detected = probs[i, j] >= threshold
-                predictions[name] = {
-                    'detected': bool(is_detected),
-                    'confidence': float(probs[i, j])
-                }
-                if is_detected:
-                    detected.append(name)
-            
             results.append({
-                'predictions': predictions,
-                'detected_categories': detected,
-                'is_harmful': any(predictions[name]['detected'] for name in self.LABEL_NAMES)
+                'logits': logits[i].cpu().tolist(),
+                'probabilities': probs[i].tolist(),
+                'label_names': self.LABEL_NAMES,
             })
         
         return results
@@ -464,16 +447,15 @@ class BatchingInferenceEngine:
         self.executor.shutdown(wait=True)
         logger.info("Batching engine stopped")
     
-    async def predict(self, text: str, threshold: float = 0.5) -> Dict[str, Any]:
+    async def predict(self, text: str) -> Dict[str, Any]:
         """
-        Queue a prediction request and wait for result.
+        Queue a prediction request and wait for raw logits result.
         """
         loop = asyncio.get_event_loop()
         future = loop.create_future()
         
         request = InferenceRequest(
             text=text,
-            threshold=threshold,
             future=future
         )
         
@@ -492,15 +474,16 @@ class BatchingInferenceEngine:
         except asyncio.TimeoutError:
             raise HTTPException(status_code=504, detail="Inference timeout")
     
-    async def predict_batch(self, texts: List[str], threshold: float = 0.5) -> List[Dict[str, Any]]:
+    async def predict_batch(self, texts: List[str]) -> List[Dict[str, Any]]:
         """
         Direct batch prediction (bypasses dynamic batching queue).
+        Returns raw logits and probabilities.
         """
         loop = asyncio.get_event_loop()
         
         # Run inference in thread pool to not block event loop
         def _infer():
-            return self.model.predict_batch(texts, threshold)
+            return self.model.predict_batch(texts)
         
         start = time.perf_counter()
         results = await loop.run_in_executor(self.executor, _infer)
@@ -554,22 +537,20 @@ class BatchingInferenceEngine:
         return batch
     
     async def _process_batch(self, batch: List[InferenceRequest]):
-        """Process a batch of requests."""
+        """Process a batch of requests - returns raw logits."""
         if not batch:
             return
         
         start = time.perf_counter()
         
-        # Extract texts and thresholds
+        # Extract texts
         texts = [req.text for req in batch]
-        # Use first threshold for batch (they're usually similar)
-        threshold = batch[0].threshold
         
         # Run inference in thread pool
         loop = asyncio.get_event_loop()
         
         def _infer():
-            return self.model.predict_batch(texts, threshold)
+            return self.model.predict_batch(texts)
         
         try:
             results = await loop.run_in_executor(self.executor, _infer)
@@ -661,8 +642,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Multi-Task Inference API",
-    description="TCN + Performer (FAVOR+) hybrid inference with dynamic batching",
-    version="4.0.0",
+    description="TCN + Performer (FAVOR+) hybrid inference with dynamic batching - returns raw logits",
+    version="5.0.0",
     lifespan=lifespan
 )
 
@@ -706,19 +687,19 @@ async def predict(request: PredictRequest):
     """
     Predict toxicity/spam for a single text.
     Uses dynamic batching queue.
+    Returns raw logits and probabilities - threshold handling is done by caller.
     """
     global engine
     if not engine:
         raise HTTPException(status_code=503, detail="Engine not ready")
     
     start = time.perf_counter()
-    result = await engine.predict(request.text, request.threshold)
+    result = await engine.predict(request.text)
     total_elapsed = (time.perf_counter() - start) * 1000
     
     return PredictResponse(
-        predictions=result['predictions'],
-        detected_categories=result['detected_categories'],
-        is_harmful=result['is_harmful'],
+        logits=result['logits'],
+        probabilities=result['probabilities'],
         inference_time_ms=total_elapsed
     )
 
@@ -728,6 +709,7 @@ async def predict_batch(request: BatchPredictRequest):
     """
     Batch prediction endpoint.
     Bypasses dynamic batching for direct batch processing.
+    Returns raw logits and probabilities for each text.
     """
     global engine
     if not engine:
@@ -740,7 +722,7 @@ async def predict_batch(request: BatchPredictRequest):
         )
     
     start = time.perf_counter()
-    results = await engine.predict_batch(request.texts, request.threshold)
+    results = await engine.predict_batch(request.texts)
     total_elapsed = (time.perf_counter() - start) * 1000
     
     return BatchPredictResponse(
@@ -775,7 +757,8 @@ def main():
     os.environ['MAX_BATCH_SIZE'] = str(args.max_batch_size)
     
     print("="*60)
-    print("MULTI-TASK INFERENCE SERVER v4")
+    print("MULTI-TASK INFERENCE SERVER v5")
+    print("(Returns raw logits - threshold handling by caller)")
     print("="*60)
     print(f"Host: {args.host}")
     print(f"Port: {args.port}")

@@ -10,12 +10,19 @@ dependencies = [
 	"colorama",
 	"fastapi>=0.100.0",
 	"fluxer.py",
+	"hqq",
+	"opencv-python>=4.8.0",
 	"performer-pytorch>=1.1.0",
+	"pillow>=10.0.0",
 	"pydantic>=2.0.0",
 	"pymongo",
 	"pyright>=1.1.408",
 	"python-dotenv",
 	"safetensors>=0.3.0",
+	"timm",
+	"torchvision",
 	"uvicorn>=0.23.0",
-	"numpy"
+	"numpy",
+	"python-multipart",
+	"torchvision"
 ]

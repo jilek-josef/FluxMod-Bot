@@ -17,12 +17,13 @@ from utils.delete_after import delete_after
 from utils.log import log
 from utils.lhs_client import (
     get_lhs_client,
+    get_image_moderation_client,
     LHSClient,
     GuildLHSSettings,
     CATEGORY_DISPLAY_NAMES,
-    CATEGORY_DESCRIPTIONS,
-    DEFAULT_LHS_SETTINGS,
     ALL_LHS_CATEGORIES,
+    IMAGE_FILTER_DISPLAY_NAMES,
+    ALL_IMAGE_FILTERS,
 )
 from fluxer import Cog
 
@@ -35,6 +36,8 @@ class LHSModerationCog(Cog):
         self.bot = bot
         self.datawrapper = DataWrapper()
         self.lhs_client: LHSClient = get_lhs_client()
+        self.image_client = get_image_moderation_client()
+        log("[AI Mod] LHSModerationCog initialized", "info")
     
     def _extract_author_role_ids(self, author, member=None) -> set[str]:
         """Extract role IDs from author/member"""
@@ -300,11 +303,12 @@ class LHSModerationCog(Cog):
     async def on_message(self, message: fluxer.Message):
         """Process messages for AI moderation"""
         # Basic checks
+        print(f"[AI Mod] Processing msg={message.id} guild={message.guild.id} channel={message.channel.id}\n{message}")
         if message.author.bot:
             return
         
-        if not getattr(message, "content", None):
-            return
+        # if not getattr(message, "content", None):
+        #     return
         
         if not message.guild:
             return
@@ -314,6 +318,11 @@ class LHSModerationCog(Cog):
         await self.datawrapper.ensure_guild(guild_id)
         
         settings = await self.datawrapper.get_lhs_settings(guild_id)
+
+        # Image Moderation Check
+        await self._check_images(message, settings)
+        print(f"[Image Mod] Done scanning msg={message.id} guild={message.guild.id} channel={message.channel.id}")
+        print(settings)
         
         if not settings.enabled:
             log(f"[AI Mod] Skipping guild={guild_id} - AI moderation not enabled", "debug")
@@ -383,10 +392,285 @@ class LHSModerationCog(Cog):
                 embed.set_thumbnail(url=avatar_url)
             
             await self.send_lhs_log(message.guild, embed)
+
+    
+    async def _check_images(self, message: fluxer.Message, settings: GuildLHSSettings):
+        """Check message images/videos for NSFW content"""
+        guild_id = message.guild.id if message.guild else None
+        if not guild_id:
+            return
+        
+        img_settings = settings.image_moderation or {}
+        
+        # Check if image moderation is enabled
+        if not img_settings.get("enabled", False):
+            log(f"[Image Mod] Skipping guild={guild_id} - image moderation not enabled", "debug")
+            return
+        
+        # Check if any filters are enabled
+        filters = img_settings.get("filters", {})
+        enabled_filters = [fid for fid in ALL_IMAGE_FILTERS if filters.get(fid, {}).get("enabled", False)]
+        if not enabled_filters:
+            log(f"[Image Mod] Skipping guild={guild_id} - no filters enabled", "debug")
+            return
+        
+        log(f"[Image Mod] Checking message msg={message.id} guild={guild_id} - {len(enabled_filters)} filters enabled", "debug")
+        
+        # Collect image URLs to scan
+        image_urls = []
+        
+        # Check attachments
+        if img_settings.get("scan_attachments", True):
+            attachments = getattr(message, "attachments", []) or []
+            log(f"[Image Mod] Message has {len(attachments)} attachments", "debug")
+            for attachment in attachments:
+                url = getattr(attachment, "url", None)
+                content_type = getattr(attachment, "content_type", "")
+                filename = getattr(attachment, "filename", "")
+                
+                log(f"[Image Mod] Attachment: url={url}, type={content_type}, filename={filename}", "debug")
+                
+                if url and self._is_image_content(content_type, filename):
+                    image_urls.append((url, "attachment", filename))
+                    log(f"[Image Mod] Added attachment to scan: {filename}", "debug")
+        
+        # Check embeds
+        if img_settings.get("scan_embeds", True):
+            embeds = getattr(message, "embeds", []) or []
+            log(f"[Image Mod] Message has {len(embeds)} embeds", "debug")
+            for embed in embeds:
+                # Check image in embed
+                image_url = getattr(embed, "image", None)
+                if image_url and hasattr(image_url, "url"):
+                    url = image_url.url
+                    image_urls.append((url, "embed_image", "embed_image"))
+                    log(f"[Image Mod] Added embed image to scan: {url}", "debug")
+                
+                # Check thumbnail
+                thumb = getattr(embed, "thumbnail", None)
+                if thumb and hasattr(thumb, "url"):
+                    url = thumb.url
+                    image_urls.append((url, "embed_thumbnail", "embed_thumb"))
+                    log(f"[Image Mod] Added embed thumbnail to scan: {url}", "debug")
+                
+                # Check video thumbnail
+                video = getattr(embed, "video", None)
+                if video and hasattr(video, "url"):
+                    url = video.url
+                    image_urls.append((url, "embed_video", "embed_video"))
+                    log(f"[Image Mod] Added embed video to scan: {url}", "debug")
+        
+        if not image_urls:
+            print(f"[Image Mod] No images to scan for msg={message.id}")
+            return
+        
+        print(f"[Image Mod] Scanning {len(image_urls)} images for msg={message.id}")
+        
+        # Scan each image
+        for url, source_type, filename in image_urls:
+            await self._scan_image(message, url, source_type, filename, settings, filters)
+    
+    def _is_image_content(self, content_type: str, filename: str) -> bool:
+        """Check if content type or filename indicates an image/video"""
+        if not content_type and not filename:
+            return False
+        
+        image_types = ["image/", "video/", "gif"]
+        image_extensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".mp4", ".mov", ".webm", ".avi"]
+        
+        content_lower = (content_type or "").lower()
+        filename_lower = (filename or "").lower()
+        
+        if any(t in content_lower for t in image_types):
+            return True
+        if any(filename_lower.endswith(ext) for ext in image_extensions):
+            return True
+        
+        return False
+    
+    async def _scan_image(self, message: fluxer.Message, url: str, source_type: str, 
+                          filename: str, settings: GuildLHSSettings, filters: dict):
+        """Download and scan a single image"""
+        import aiohttp
+        
+        log(f"[Image Mod] Downloading image from {url}", "debug")
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    if resp.status != 200:
+                        log(f"[Image Mod] Failed to download image: HTTP {resp.status}", "warning")
+                        return
+                    
+                    content_length = resp.headers.get('content-length')
+                    if content_length and int(content_length) > 50 * 1024 * 1024:  # 50MB max
+                        log(f"[Image Mod] Image too large: {content_length} bytes", "warning")
+                        return
+                    
+                    image_data = await resp.read()
+                    log(f"[Image Mod] Downloaded {len(image_data)} bytes", "debug")
+                    
+                    if len(image_data) == 0:
+                        log(f"[Image Mod] Empty image data", "warning")
+                        return
+                    
+                    # Build thresholds dict for enabled filters only
+                    thresholds = {}
+                    for fid, fconfig in filters.items():
+                        if fconfig.get("enabled", False):
+                            thresholds[fid] = fconfig.get("threshold", 0.2)
+                    
+                    log(f"[Image Mod] Sending to moderation API with thresholds: {thresholds}", "debug")
+                    
+                    # Send to image moderation API
+                    result = await self.image_client.moderate_image(image_data, thresholds)
+                    print(f"[Image Mod] API result: {result}")
+                    
+                    if not result:
+                        log(f"[Image Mod] Moderation API returned no result", "warning")
+                        return
+                    
+                    log(f"[Image Mod] API result: is_nsfw={result.get('is_nsfw')}, "
+                        f"rating={result.get('content_rating')}, confidence={result.get('confidence')}, "
+                        f"is_guro={result.get('is_guro')}, potential_csam={result.get('potential_csam')}, "
+                        f"is_realistic={result.get('is_realistic')}", "debug")
+                    
+                    # Map API response to our filter system
+                    # API returns: is_nsfw, content_rating, confidence, is_guro, is_realistic, potential_csam, is_ambiguous, logits
+                    triggered_filters = []
+                    
+                    # Check each enabled filter against the response
+                    filter_checks = {
+                        "guro": result.get("is_guro", False),
+                        "realistic": result.get("is_realistic", False),
+                        "csam_check": result.get("potential_csam", False),
+                    }
+                    
+                    # For NSFW categories, check content_rating and logits
+                    content_rating = result.get("content_rating", "safe")
+                    logits = result.get("logits", {})
+                    
+                    # Map content ratings to our filters
+                    rating_to_filter = {
+                        "general": "general",
+                        "sensitive": "sensitive", 
+                        "questionable": "questionable",
+                        "explicit": "explicit",
+                    }
+                    
+                    # Check if the content rating matches an enabled filter
+                    if content_rating in rating_to_filter:
+                        filter_id = rating_to_filter[content_rating]
+                        if filters.get(filter_id, {}).get("enabled", False):
+                            confidence = result.get("confidence", 0)
+                            threshold = filters[filter_id].get("threshold", 0.2)
+                            if confidence >= threshold:
+                                triggered_filters.append((filter_id, confidence))
+                    
+                    # Check other boolean flags
+                    for filter_id, is_triggered in filter_checks.items():
+                        if is_triggered and filters.get(filter_id, {}).get("enabled", False):
+                            confidence = result.get("confidence", 0)
+                            triggered_filters.append((filter_id, confidence))
+                    
+                    log(f"[Image Mod] Triggered filters: {triggered_filters}", "info")
+                    
+                    if not triggered_filters:
+                        log(f"[Image Mod] No violations detected for image", "debug")
+                        return
+                    
+                    # Determine the most severe triggered filter
+                    triggered_filters.sort(key=lambda x: x[1], reverse=True)
+                    primary_filter, highest_confidence = triggered_filters[0]
+                    primary_action = filters.get(primary_filter, {}).get("action", "delete")
+                    
+                    # Take action
+                    await self._take_image_action(message, primary_filter, highest_confidence, 
+                                                   primary_action, source_type, filename, settings)
+                    
+        except aiohttp.ClientError as e:
+            log(f"[Image Mod] Download error: {e}", "error")
+        except Exception as e:
+            log(f"[Image Mod] Unexpected error scanning image: {e}", "error")
+    
+    async def _take_image_action(self, message: fluxer.Message, filter_id: str, confidence: float,
+                                  action: str, source_type: str, filename: str, settings: GuildLHSSettings):
+        """Take action on a violating image"""
+        guild_id = message.guild.id if message.guild else None
+        
+        log(f"[Image Mod] Taking action '{action}' for filter '{filter_id}' on msg={message.id}", "info")
+        
+        # Check log only mode
+        img_settings = settings.image_moderation or {}
+        if img_settings.get("log_only_mode", False):
+            log(f"[Image Mod] Log only mode - not taking action", "info")
+            action = "log_only"
+        
+        action_result = "unknown"
+        
+        try:
+            if action == "delete":
+                await message.delete()
+                action_result = "deleted"
+                log(f"[Image Mod] Message deleted", "info")
+                
+                # Send warning
+                if message.channel:
+                    warning = await message.channel.send(
+                        embed=EmbedBuilder.error_embed(
+                            "Image Removed",
+                            f"{message.author.mention}, your image was removed by AI moderation."
+                        )
+                    )
+                    asyncio.create_task(delete_after(warning, 5))
+                    
+            elif action == "warn":
+                action_result = "warned"
+                
+            elif action == "kick":
+                await message.guild.kick(message.author, reason=f"AI Image Moderation: {filter_id}")
+                action_result = "kicked"
+                log(f"[Image Mod] User kicked", "info")
+                
+            elif action == "ban":
+                await message.guild.ban(message.author, reason=f"AI Image Moderation: {filter_id}")
+                action_result = "banned"
+                log(f"[Image Mod] User banned", "info")
+                
+            elif action == "log_only":
+                action_result = "log_only"
+                
+        except Exception as e:
+            log(f"[Image Mod] Action error: {e}", "error")
+            action_result = f"{action}-failed"
+        
+        # Send log
+        display_name = IMAGE_FILTER_DISPLAY_NAMES.get(filter_id, filter_id)
+        
+        embed = EmbedBuilder.create_embed(
+            title="🖼️ AI Image Moderation Violation (Experimental)",
+            description=(
+                f"**User:** {message.author.mention} (`{message.author.id}`)\n"
+                f"**Channel:** {message.channel.mention if message.channel else 'Unknown'}\n"
+                f"**Filter:** `{display_name}`\n"
+                f"**Confidence:** {confidence:.1%}\n"
+                f"**Action:** `{action_result}`\n"
+                f"**Source:** `{source_type}` ({filename})\n"
+                f"**Time:** <t:{int(message.created_at.timestamp())}:F>"
+            ),
+            color=0xFF6B6B,
+        )
+        
+        avatar = getattr(message.author, "display_avatar", None)
+        avatar_url = getattr(avatar, "url", None)
+        if avatar_url:
+            embed.set_thumbnail(url=avatar_url)
+        
+        await self.send_lhs_log(message.guild, embed)
     
     # =======================================================================
     # AI Moderation Commands (Experimental)
-    # =======================================================================
+    # ===================================================================
     
     @Cog.command(name="toggle_ai_mod")
     async def toggle_ai_mod(self, ctx: fluxer.Message):
@@ -613,6 +897,60 @@ class LHSModerationCog(Cog):
         )
         await ctx.reply(embed=embed)
     
+    @Cog.command(name="set_ai_mod_action")
+    async def set_ai_mod_action(self, ctx: fluxer.Message, action: str = None):
+        """
+        Set the default action for AI moderation violations (Experimental)
+        
+        Usage: fm!set_ai_mod_action <action>
+        
+        Actions: delete, warn, kick, ban
+        Default: delete
+        
+        Examples:
+          fm!set_ai_mod_action delete
+          fm!set_ai_mod_action warn
+          fm!set_ai_mod_action ban
+        """
+        member = getattr(ctx, "member", None) or ctx.author
+        
+        if not self._check_manage_guild_perm(member, ctx):
+            await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
+            return
+        
+        if action is None:
+            await ctx.reply(
+                "Usage: `fm!set_ai_mod_action <action>`\n\n"
+                "**Available Actions:**\n"
+                "• `delete` - Delete the violating message (default)\n"
+                "• `warn` - Warn the user and log the violation\n"
+                "• `kick` - Kick the user from the server\n"
+                "• `ban` - Ban the user from the server\n\n"
+                "Example: `fm!set_ai_mod_action warn`"
+            )
+            return
+        
+        action = action.lower()
+        valid_actions = ["delete", "warn", "kick", "ban"]
+        
+        if action not in valid_actions:
+            await ctx.reply(f"❌ Invalid action: `{action}`. Valid actions: {', '.join(valid_actions)}")
+            return
+        
+        guild = ctx.guild
+        if not guild:
+            await ctx.reply("❌ This command can only be used in a server.")
+            return
+        
+        await self.datawrapper.update_lhs_settings(guild.id, {"action": action})
+        
+        embed = EmbedBuilder.create_embed(
+            title="🤖 AI Moderation Action Updated (Experimental)",
+            description=f"Default action set to **{action}**",
+            color=0x00AA00,
+        )
+        await ctx.reply(embed=embed)
+    
     @Cog.command(name="set_ai_mod_exempt_roles")
     async def set_ai_mod_exempt_roles(self, ctx: fluxer.Message, *, roles: str = None):
         """
@@ -718,8 +1056,7 @@ class LHSModerationCog(Cog):
             await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
             return
         
-        async with ctx.channel.typing():
-            health = await self.lhs_client.health_check()
+        health = await self.lhs_client.health_check()
         
         if health:
             embed = EmbedBuilder.create_embed(
@@ -760,8 +1097,7 @@ class LHSModerationCog(Cog):
             await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
             return
         
-        async with ctx.channel.typing():
-            result = await self.lhs_client.check_content(text)
+        result = await self.lhs_client.check_content(text)
         
         if not result:
             await ctx.reply("❌ Failed to analyze text. The AI moderation server may be unavailable.")
@@ -844,7 +1180,9 @@ class LHSModerationCog(Cog):
                 f"`{prefix}set_ai_mod_threshold <0.0-1.0>`\n"
                 f"Set the global detection threshold (default: 0.65).\n\n"
                 f"`{prefix}set_ai_mod_category <category> <on/off> [threshold]`\n"
-                f"Configure a specific detection category."
+                f"Configure a specific detection category.\n\n"
+                f"`{prefix}set_ai_mod_action <action>`\n"
+                f"Set the default action: delete, warn, kick, or ban."
             ),
             inline=False,
         )
@@ -889,9 +1227,420 @@ class LHSModerationCog(Cog):
             inline=False,
         )
         
+        embed.add_field(
+            name="Image Moderation",
+            value=(
+                f"`{prefix}toggle_image_mod` - Enable/disable image moderation\n"
+                f"`{prefix}image_mod_settings` - View image moderation settings\n"
+                f"`{prefix}set_image_mod_filter <filter> <on/off> [threshold]` - Configure a filter\n"
+                f"`{prefix}set_image_mod_action <filter> <action>` - Set action for a filter\n"
+                f"`{prefix}set_image_mod_log_only <on/off>` - Toggle log-only mode\n"
+                f"`{prefix}image_mod_status` - Check image moderation server status"
+            ),
+            inline=False,
+        )
+        
+        embed.add_field(
+            name="Image Filters (all disabled by default)",
+            value=(
+                "`general` - General non-NSFW content detection\n"
+                "`sensitive` - Mildly sensitive content\n"
+                "`questionable` - Borderline inappropriate content\n"
+                "`explicit` - Explicit NSFW content\n"
+                "`guro` - Graphic violence and gore\n"
+                "`realistic` - Photorealistic image detection\n"
+                "`csam_check` - Possible-CSAM detection"
+            ),
+            inline=False,
+        )
+        
+        embed.add_field(
+            name="Available Actions",
+            value=(
+                "`delete` - Delete the message (default)\n"
+                "`warn` - Warn the user and log\n"
+                "`kick` - Kick the user from the server\n"
+                "`ban` - Ban the user from the server"
+            ),
+            inline=False,
+        )
+        
         embed.set_footer(text=f"Prefix: {prefix} | ⚠️ Experimental feature")
+        await ctx.reply(embed=embed)
+    
+    # =======================================================================
+    # Image Moderation Commands
+    # =======================================================================
+    
+    @Cog.command(name="toggle_image_mod")
+    async def toggle_image_mod(self, ctx: fluxer.Message):
+        """
+        Enable or disable AI image moderation (Experimental)
+        
+        Requires Administrator or Manage Server permission.
+        """
+        member = getattr(ctx, "member", None) or ctx.author
+        
+        if not self._check_manage_guild_perm(member, ctx):
+            await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
+            return
+        
+        guild = ctx.guild
+        if not guild:
+            await ctx.reply("❌ This command can only be used in a server.")
+            return
+        
+        await self.datawrapper.ensure_guild(guild.id)
+        settings = await self.datawrapper.get_lhs_settings(guild.id)
+        
+        # Toggle image moderation
+        img_settings = getattr(settings, 'image_moderation', {}) or {}
+        current_state = img_settings.get('enabled', False)
+        new_state = not current_state
+        
+        await self.datawrapper.update_lhs_settings(guild.id, {
+            "image_moderation": {
+                **img_settings,
+                "enabled": new_state
+            }
+        })
+        
+        status = "enabled" if new_state else "disabled"
+        emoji = "✅" if new_state else "🔴"
+        
+        embed = EmbedBuilder.create_embed(
+            title=f"{emoji} AI Image Moderation {status.title()} (Experimental)",
+            description=(
+                f"AI image moderation has been **{status}**.\n\n"
+                f"⚠️ **Note:** This is an experimental feature. "
+                f"It scans images and videos for NSFW content using AI classification.\n\n"
+                f"**Scanned content:**\n"
+                f"• Attachments (images, GIFs)\n"
+                f"• Embeds (Tenor, Imgur, etc.)\n"
+                f"• Videos (frame sampling)\n\n"
+                f"Use `fm!image_mod_settings` to view and configure detection thresholds."
+            ),
+            color=0x00AA00 if new_state else 0xFF4444,
+        )
+        await ctx.reply(embed=embed)
+    
+    @Cog.command(name="image_mod_settings")
+    async def image_mod_settings(self, ctx: fluxer.Message):
+        """
+        View current AI image moderation settings (Experimental)
+        
+        Requires Administrator or Manage Server permission.
+        """
+        member = getattr(ctx, "member", None) or ctx.author
+        
+        if not self._check_manage_guild_perm(member, ctx):
+            await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
+            return
+        
+        guild = ctx.guild
+        if not guild:
+            await ctx.reply("❌ This command can only be used in a server.")
+            return
+        
+        await self.datawrapper.ensure_guild(guild.id)
+        settings = await self.datawrapper.get_lhs_settings(guild.id)
+        img_settings = getattr(settings, 'image_moderation', {}) or {}
+        
+        # Get filters configuration
+        filters = img_settings.get("filters", {})
+        
+        # Build filter status list with actions
+        filters_text = []
+        for filter_id in ALL_IMAGE_FILTERS:
+            filter_config = filters.get(filter_id, {"enabled": False, "threshold": 0.2, "action": "delete"})
+            display_name = IMAGE_FILTER_DISPLAY_NAMES.get(filter_id, filter_id)
+            status = "🟢" if filter_config.get("enabled", False) else "🔴"
+            threshold = filter_config.get("threshold", 0.2)
+            action = filter_config.get("action", "delete")
+            filters_text.append(f"{status} {display_name}: {threshold:.0%} (`{action}`)")
+        
+        enabled_status = "✅ Enabled" if img_settings.get("enabled") else "🔴 Disabled"
+        
+        embed = EmbedBuilder.create_embed(
+            title="🖼️ AI Image Moderation Settings (Experimental)",
+            description=(
+                f"**Status:** {enabled_status}\n"
+                f"**Scan Attachments:** {'Yes' if img_settings.get('scan_attachments', True) else 'No'}\n"
+                f"**Scan Embeds:** {'Yes' if img_settings.get('scan_embeds', True) else 'No'}\n"
+                f"**Log Only Mode:** {'Yes' if img_settings.get('log_only_mode') else 'No'}\n\n"
+                f"**Filters (threshold / action):**\n"
+                f"{chr(10).join(filters_text)}"
+            ),
+            color=0x00BFFF if img_settings.get("enabled") else 0x888888,
+        )
+        
+        embed.set_footer(text="Use fm!ai_mod_help for command list | ⚠️ Experimental feature")
+        await ctx.reply(embed=embed)
+    
+    @Cog.command(name="set_image_mod_filter")
+    async def set_image_mod_filter(self, ctx: fluxer.Message, filter_id: str = None, 
+                                    enabled: str = None, threshold: str = None):
+        """
+        Configure an image moderation filter (Experimental)
+        
+        Usage: fm!set_image_mod_filter <filter> <on/off> [threshold]
+        
+        Filters: general, sensitive, questionable, explicit, guro, realistic, csam_check
+        
+        Examples:
+          fm!set_image_mod_filter explicit on
+          fm!set_image_mod_filter guro on 0.5
+          fm!set_image_mod_filter general off
+        """
+        member = getattr(ctx, "member", None) or ctx.author
+        
+        if not self._check_manage_guild_perm(member, ctx):
+            await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
+            return
+        
+        if filter_id is None or enabled is None:
+            filters_list = "\n".join([
+                f"• `{fid}` - {IMAGE_FILTER_DISPLAY_NAMES.get(fid, fid)}"
+                for fid in ALL_IMAGE_FILTERS
+            ])
+            await ctx.reply(
+                f"Usage: `fm!set_image_mod_filter <filter> <on/off> [threshold]`\n\n"
+                f"**Available Filters:**\n{filters_list}\n\n"
+                f"Examples:\n"
+                f"`fm!set_image_mod_filter explicit on` - Enable explicit filter\n"
+                f"`fm!set_image_mod_filter guro on 0.5` - Enable guro filter with 50% threshold\n"
+                f"`fm!set_image_mod_filter general off` - Disable general filter"
+            )
+            return
+        
+        filter_id = filter_id.lower()
+        if filter_id not in ALL_IMAGE_FILTERS:
+            await ctx.reply(f"❌ Unknown filter: `{filter_id}`. Use `fm!set_image_mod_filter` to see available filters.")
+            return
+        
+        enabled_val = enabled.lower() in ("on", "true", "yes", "1", "enable")
+        
+        update_data = {"enabled": enabled_val}
+        
+        if threshold is not None:
+            try:
+                thresh_val = float(threshold)
+                if not 0.0 <= thresh_val <= 1.0:
+                    raise ValueError
+                update_data["threshold"] = thresh_val
+            except ValueError:
+                await ctx.reply("❌ Threshold must be a number between 0.0 and 1.0")
+                return
+        
+        guild = ctx.guild
+        if not guild:
+            await ctx.reply("❌ This command can only be used in a server.")
+            return
+        
+        settings = await self.datawrapper.get_lhs_settings(guild.id)
+        img_settings = getattr(settings, 'image_moderation', {}) or {}
+        current_filters = img_settings.get('filters', {})
+        
+        # Update the specific filter
+        current_filter = current_filters.get(filter_id, {})
+        current_filters[filter_id] = {
+            **current_filter,
+            **update_data
+        }
+        
+        await self.datawrapper.update_lhs_settings(guild.id, {
+            "image_moderation": {
+                **img_settings,
+                "filters": current_filters
+            }
+        })
+        
+        display_name = IMAGE_FILTER_DISPLAY_NAMES.get(filter_id, filter_id)
+        status = "enabled" if enabled_val else "disabled"
+        
+        desc = f"Filter `{display_name}` has been **{status}**"
+        if "threshold" in update_data:
+            desc += f" with threshold **{update_data['threshold']:.0%}**"
+        desc += "."
+        
+        embed = EmbedBuilder.create_embed(
+            title="🖼️ Image Moderation Filter Updated (Experimental)",
+            description=desc,
+            color=0x00AA00 if enabled_val else 0xFFAA00,
+        )
+        await ctx.reply(embed=embed)
+    
+    @Cog.command(name="set_image_mod_action")
+    async def set_image_mod_action(self, ctx: fluxer.Message, filter_id: str = None, action: str = None):
+        """
+        Set action for a specific image filter (Experimental)
+        
+        Usage: fm!set_image_mod_action <filter> <action>
+        
+        Filters: general, sensitive, questionable, explicit, guro, realistic, csam_check
+        Actions: delete, warn, kick, ban
+        
+        Examples:
+          fm!set_image_mod_action explicit delete
+          fm!set_image_mod_action guro ban
+          fm!set_image_mod_action csam_check ban
+        """
+        member = getattr(ctx, "member", None) or ctx.author
+        
+        if not self._check_manage_guild_perm(member, ctx):
+            await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
+            return
+        
+        if filter_id is None or action is None:
+            filters_list = "\n".join([
+                f"• `{fid}` - {IMAGE_FILTER_DISPLAY_NAMES.get(fid, fid)}"
+                for fid in ALL_IMAGE_FILTERS
+            ])
+            await ctx.reply(
+                f"Usage: `fm!set_image_mod_action <filter> <action>`\n\n"
+                f"**Available Filters:**\n{filters_list}\n\n"
+                f"**Actions:** delete, warn, kick, ban\n\n"
+                f"Examples:\n"
+                f"`fm!set_image_mod_action explicit delete`\n"
+                f"`fm!set_image_mod_action guro ban`"
+            )
+            return
+        
+        filter_id = filter_id.lower()
+        action = action.lower()
+        
+        valid_actions = ["delete", "warn", "kick", "ban"]
+        
+        if filter_id not in ALL_IMAGE_FILTERS:
+            await ctx.reply(f"❌ Unknown filter: `{filter_id}`. Use `fm!set_image_mod_action` to see available filters.")
+            return
+        
+        if action not in valid_actions:
+            await ctx.reply(f"❌ Invalid action: `{action}`. Valid: {', '.join(valid_actions)}")
+            return
+        
+        guild = ctx.guild
+        if not guild:
+            await ctx.reply("❌ This command can only be used in a server.")
+            return
+        
+        settings = await self.datawrapper.get_lhs_settings(guild.id)
+        img_settings = getattr(settings, 'image_moderation', {}) or {}
+        current_filters = img_settings.get('filters', {})
+        
+        # Update the specific filter's action
+        current_filter = current_filters.get(filter_id, {})
+        current_filters[filter_id] = {
+            **current_filter,
+            "action": action
+        }
+        
+        await self.datawrapper.update_lhs_settings(guild.id, {
+            "image_moderation": {
+                **img_settings,
+                "filters": current_filters
+            }
+        })
+        
+        display_name = IMAGE_FILTER_DISPLAY_NAMES.get(filter_id, filter_id)
+        embed = EmbedBuilder.create_embed(
+            title="🖼️ Image Moderation Action Updated (Experimental)",
+            description=f"Action for `{display_name}` filter set to **{action}**",
+            color=0x00AA00,
+        )
+        await ctx.reply(embed=embed)
+    
+    @Cog.command(name="set_image_mod_log_only")
+    async def set_image_mod_log_only(self, ctx: fluxer.Message, enabled: str = None):
+        """
+        Set image moderation to log-only mode (Experimental)
+        
+        Usage: fm!set_image_mod_log_only <on/off>
+        
+        In log-only mode, violations are logged but no action is taken.
+        """
+        member = getattr(ctx, "member", None) or ctx.author
+        
+        if not self._check_manage_guild_perm(member, ctx):
+            await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
+            return
+        
+        if enabled is None:
+            await ctx.reply("Usage: `fm!set_image_mod_log_only <on/off>`")
+            return
+        
+        enabled_val = enabled.lower() in ("on", "true", "yes", "1", "enable")
+        
+        guild = ctx.guild
+        if not guild:
+            await ctx.reply("❌ This command can only be used in a server.")
+            return
+        
+        settings = await self.datawrapper.get_lhs_settings(guild.id)
+        img_settings = getattr(settings, 'image_moderation', {}) or {}
+        
+        await self.datawrapper.update_lhs_settings(guild.id, {
+            "image_moderation": {
+                **img_settings,
+                "log_only_mode": enabled_val
+            }
+        })
+        
+        status = "enabled" if enabled_val else "disabled"
+        
+        embed = EmbedBuilder.create_embed(
+            title="🖼️ Image Moderation Log-Only Updated (Experimental)",
+            description=f"Log-only mode has been **{status}**.",
+            color=0x00AA00 if enabled_val else 0xFFAA00,
+        )
+        await ctx.reply(embed=embed)
+    
+    @Cog.command(name="image_mod_status")
+    async def image_mod_status(self, ctx: fluxer.Message):
+        """
+        Check image moderation inference server status (Experimental)
+        
+        Shows server health, model status, and available filters.
+        """
+        member = getattr(ctx, "member", None) or ctx.author
+        
+        if not self._check_manage_guild_perm(member, ctx):
+            await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
+            return
+        
+        from utils.lhs_client import get_image_moderation_client
+        img_client = get_image_moderation_client()
+        
+        health = await img_client.health_check()
+        
+        if health:
+            embed = EmbedBuilder.create_embed(
+                title="🖼️ Image Moderation Server Status (Experimental)",
+                description=(
+                    f"**Status:** {health.get('status', 'unknown')}\n"
+                    f"**Model Loaded:** {'✅ Yes' if health.get('model_loaded') else '❌ No'}\n"
+                    f"**Device:** {health.get('device', 'unknown')}\n"
+                    f"**Version:** {health.get('version', 'unknown')}"
+                ),
+                color=0x00AA00,
+            )
+        else:
+            embed = EmbedBuilder.error_embed(
+                "🖼️ Image Moderation Server Unavailable",
+                "Could not connect to the image moderation inference server. "
+                "The feature may be temporarily unavailable or the server needs to be started."
+            )
+        
         await ctx.reply(embed=embed)
 
 
 async def setup(bot: fluxer.Bot):
-    await bot.add_cog(LHSModerationCog(bot))
+    try:
+        cog = LHSModerationCog(bot)
+        await bot.add_cog(cog)
+        log("[AI Mod] LHSModerationCog loaded successfully", "success")
+    except Exception as e:
+        log(f"[AI Mod] Failed to load LHSModerationCog: {e}", "error")
+        import traceback
+        log(f"[AI Mod] Traceback: {traceback.format_exc()}", "error")
+        raise
