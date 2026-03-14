@@ -59,7 +59,7 @@ class HelpCog(Cog):
                 f"`{prefix}ai_mod_settings`\n"
                 "View current AI moderation settings.\n\n"
                 f"`{prefix}set_ai_mod_threshold <0.0-1.0>`\n"
-                "Set global detection threshold (default: 0.55).\n\n"
+                "Set global detection threshold (default: 0.65).\n\n"
                 f"`{prefix}set_ai_mod_category <category> <on/off> [threshold]`\n"
                 "Configure a specific detection category.\n\n"
                 f"`{prefix}set_ai_mod_exempt_roles <@&role1> ...`\n"

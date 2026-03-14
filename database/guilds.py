@@ -9,7 +9,7 @@ bot_stats = db.collection("bot_stats")
 # LHS Settings defaults
 DEFAULT_LHS_SETTINGS = {
     "enabled": False,
-    "global_threshold": 0.55,
+    "global_threshold": 0.65,
     "categories": {},
     "exempt_roles": [],
     "exempt_channels": [],

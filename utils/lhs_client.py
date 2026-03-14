@@ -62,24 +62,24 @@ CATEGORY_DESCRIPTIONS = {
 }
 
 # Default threshold for all categories
-DEFAULT_LHS_THRESHOLD = 0.55
+DEFAULT_LHS_THRESHOLD = 0.65
 
 # Default settings for a guild
 DEFAULT_LHS_SETTINGS = {
     "enabled": False,
     "global_threshold": DEFAULT_LHS_THRESHOLD,
     "categories": {
-        "dangerous_content": {"enabled": True, "threshold": DEFAULT_LHS_THRESHOLD},
-        "hate_speech": {"enabled": True, "threshold": DEFAULT_LHS_THRESHOLD},
-        "harassment": {"enabled": True, "threshold": DEFAULT_LHS_THRESHOLD},
-        "sexually_explicit": {"enabled": True, "threshold": DEFAULT_LHS_THRESHOLD},
-        "toxicity": {"enabled": True, "threshold": DEFAULT_LHS_THRESHOLD},
-        "severe_toxicity": {"enabled": True, "threshold": DEFAULT_LHS_THRESHOLD},
-        "threat": {"enabled": True, "threshold": DEFAULT_LHS_THRESHOLD},
-        "insult": {"enabled": True, "threshold": DEFAULT_LHS_THRESHOLD},
-        "identity_attack": {"enabled": True, "threshold": DEFAULT_LHS_THRESHOLD},
-        "phish": {"enabled": True, "threshold": DEFAULT_LHS_THRESHOLD},
-        "spam": {"enabled": True, "threshold": DEFAULT_LHS_THRESHOLD},
+        "dangerous_content": {"enabled": False, "threshold": DEFAULT_LHS_THRESHOLD},
+        "hate_speech": {"enabled": False, "threshold": DEFAULT_LHS_THRESHOLD},
+        "harassment": {"enabled": False, "threshold": DEFAULT_LHS_THRESHOLD},
+        "sexually_explicit": {"enabled": False, "threshold": DEFAULT_LHS_THRESHOLD},
+        "toxicity": {"enabled": False, "threshold": DEFAULT_LHS_THRESHOLD},
+        "severe_toxicity": {"enabled": False, "threshold": DEFAULT_LHS_THRESHOLD},
+        "threat": {"enabled": False, "threshold": DEFAULT_LHS_THRESHOLD},
+        "insult": {"enabled": False, "threshold": DEFAULT_LHS_THRESHOLD},
+        "identity_attack": {"enabled": False, "threshold": DEFAULT_LHS_THRESHOLD},
+        "phish": {"enabled": False, "threshold": DEFAULT_LHS_THRESHOLD},
+        "spam": {"enabled": False, "threshold": DEFAULT_LHS_THRESHOLD},
     },
     "exempt_roles": [],
     "exempt_channels": [],

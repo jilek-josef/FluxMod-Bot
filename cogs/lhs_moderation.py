@@ -116,15 +116,37 @@ class LHSModerationCog(Cog):
             return content[: max_len - 3] + "..."
         return content
     
-    def _check_manage_guild_perm(self, member) -> bool:
-        """Check if member has admin or manage guild permission"""
+    def _check_manage_guild_perm(self, member, ctx=None) -> bool:
+        """Check if member has admin or manage guild permission, or is guild owner"""
+        # Check if guild owner
+        if ctx and ctx.guild:
+            owner_id = getattr(ctx.guild, "owner_id", None)
+            if owner_id and str(getattr(member, "id", None)) == str(owner_id):
+                return True
+        
         permissions = getattr(member, "permissions", None)
-        if not permissions:
-            return False
-        return (
-            getattr(permissions, "administrator", False)
-            or getattr(permissions, "manage_guild", False)
-        )
+        if permissions is None:
+            # Fallback: if we can't determine permissions, allow it
+            # This handles gateway payloads that omit permission bitfields
+            return True
+        
+        # Check permission attributes directly
+        if getattr(permissions, "administrator", False):
+            return True
+        if getattr(permissions, "manage_guild", False):
+            return True
+        
+        # Check permission bitfield (for bitmask-style permissions)
+        perm_value = getattr(permissions, "value", 0)
+        if isinstance(perm_value, int):
+            # MANAGE_GUILD = 0x00000020 = 32
+            # ADMINISTRATOR = 0x00000008 = 8
+            if perm_value & 0x00000008:  # ADMINISTRATOR
+                return True
+            if perm_value & 0x00000020:  # MANAGE_GUILD
+                return True
+        
+        return False
     
     async def _resolve_automod_log_channel_id(self, guild_id: int) -> Optional[str]:
         """Resolve the AutoMod log channel ID"""
@@ -375,7 +397,7 @@ class LHSModerationCog(Cog):
         """
         member = getattr(ctx, "member", None) or ctx.author
         
-        if not self._check_manage_guild_perm(member):
+        if not self._check_manage_guild_perm(member, ctx):
             await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
             return
         
@@ -414,7 +436,7 @@ class LHSModerationCog(Cog):
         """
         member = getattr(ctx, "member", None) or ctx.author
         
-        if not self._check_manage_guild_perm(member):
+        if not self._check_manage_guild_perm(member, ctx):
             await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
             return
         
@@ -426,11 +448,11 @@ class LHSModerationCog(Cog):
         await self.datawrapper.ensure_guild(guild.id)
         settings = await self.datawrapper.get_lhs_settings(guild.id)
         
-        # Build categories info
+        # Build categories info - show all categories
         categories_text = []
-        for cat in ALL_LHS_CATEGORIES[:6]:  # Show first 6
+        for cat in ALL_LHS_CATEGORIES:
             cat_settings = settings.categories.get(cat, {})
-            enabled = cat_settings.get("enabled", True)
+            enabled = cat_settings.get("enabled", False)
             threshold = cat_settings.get("threshold", settings.global_threshold)
             display_name = CATEGORY_DISPLAY_NAMES.get(cat, cat)
             status = "🟢" if enabled else "🔴"
@@ -449,8 +471,7 @@ class LHSModerationCog(Cog):
                 f"**Action:** `{settings.action}`\n"
                 f"**Severity:** `{settings.severity}`\n"
                 f"**Log Only Mode:** {'Yes' if settings.log_only_mode else 'No'}\n\n"
-                f"**Detection Categories:**\n" + "\n".join(categories_text) + "\n"
-                f"*(and {len(ALL_LHS_CATEGORIES) - 6} more...)*\n\n"
+                f"**Detection Categories:**\n" + "\n".join(categories_text) + "\n\n"
                 f"**Exempt Roles:** {', '.join(exempt_roles) if exempt_roles else 'None'}\n"
                 f"**Exempt Channels:** {', '.join(exempt_channels) if exempt_channels else 'None'}\n"
                 f"**Exempt Users:** {', '.join(exempt_users) if exempt_users else 'None'}"
@@ -469,11 +490,11 @@ class LHSModerationCog(Cog):
         Usage: fm!set_ai_mod_threshold <0.0-1.0>
         Higher values = less sensitive (fewer detections)
         Lower values = more sensitive (more detections)
-        Default: 0.55 (55%)
+        Default: 0.65 (65%)
         """
         member = getattr(ctx, "member", None) or ctx.author
         
-        if not self._check_manage_guild_perm(member):
+        if not self._check_manage_guild_perm(member, ctx):
             await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
             return
         
@@ -491,7 +512,7 @@ class LHSModerationCog(Cog):
             if not 0.0 <= thresh_val <= 1.0:
                 raise ValueError("Threshold must be between 0.0 and 1.0")
         except ValueError:
-            await ctx.reply("❌ Threshold must be a number between 0.0 and 1.0 (e.g., 0.55)")
+            await ctx.reply("❌ Threshold must be a number between 0.0 and 1.0 (e.g., 0.65)")
             return
         
         guild = ctx.guild
@@ -531,7 +552,7 @@ class LHSModerationCog(Cog):
         """
         member = getattr(ctx, "member", None) or ctx.author
         
-        if not self._check_manage_guild_perm(member):
+        if not self._check_manage_guild_perm(member, ctx):
             await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
             return
         
@@ -602,7 +623,7 @@ class LHSModerationCog(Cog):
         """
         member = getattr(ctx, "member", None) or ctx.author
         
-        if not self._check_manage_guild_perm(member):
+        if not self._check_manage_guild_perm(member, ctx):
             await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
             return
         
@@ -649,7 +670,7 @@ class LHSModerationCog(Cog):
         """
         member = getattr(ctx, "member", None) or ctx.author
         
-        if not self._check_manage_guild_perm(member):
+        if not self._check_manage_guild_perm(member, ctx):
             await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
             return
         
@@ -693,7 +714,7 @@ class LHSModerationCog(Cog):
         """
         member = getattr(ctx, "member", None) or ctx.author
         
-        if not self._check_manage_guild_perm(member):
+        if not self._check_manage_guild_perm(member, ctx):
             await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
             return
         
@@ -735,7 +756,7 @@ class LHSModerationCog(Cog):
         
         member = getattr(ctx, "member", None) or ctx.author
         
-        if not self._check_manage_guild_perm(member):
+        if not self._check_manage_guild_perm(member, ctx):
             await ctx.reply("❌ You need Administrator or Manage Server permission to use this command.")
             return
         
@@ -821,7 +842,7 @@ class LHSModerationCog(Cog):
                 f"`{prefix}ai_mod_settings`\n"
                 f"View current AI moderation settings.\n\n"
                 f"`{prefix}set_ai_mod_threshold <0.0-1.0>`\n"
-                f"Set the global detection threshold (default: 0.55).\n\n"
+                f"Set the global detection threshold (default: 0.65).\n\n"
                 f"`{prefix}set_ai_mod_category <category> <on/off> [threshold]`\n"
                 f"Configure a specific detection category."
             ),
