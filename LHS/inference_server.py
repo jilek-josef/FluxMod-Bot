@@ -786,7 +786,7 @@ def main():
     print("="*60)
     
     uvicorn.run(
-        "inference_server:app",
+        "LHS.inference_server:app",
         host=args.host,
         port=args.port,
         workers=args.workers,

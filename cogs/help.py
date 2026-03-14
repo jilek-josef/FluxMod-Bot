@@ -52,11 +52,38 @@ class HelpCog(Cog):
         )
 
         embed_help.add_field(
+            name="🤖 AI Moderation (Experimental)",
+            value=(
+                f"`{prefix}toggle_ai_mod`\n"
+                "Enable or disable AI moderation.\n\n"
+                f"`{prefix}ai_mod_settings`\n"
+                "View current AI moderation settings.\n\n"
+                f"`{prefix}set_ai_mod_threshold <0.0-1.0>`\n"
+                "Set global detection threshold (default: 0.55).\n\n"
+                f"`{prefix}set_ai_mod_category <category> <on/off> [threshold]`\n"
+                "Configure a specific detection category.\n\n"
+                f"`{prefix}set_ai_mod_exempt_roles <@&role1> ...`\n"
+                "Set roles exempt from AI moderation.\n\n"
+                f"`{prefix}set_ai_mod_exempt_channels <#ch1> ...`\n"
+                "Set channels exempt from AI moderation.\n\n"
+                f"`{prefix}ai_mod_status`\n"
+                "Check AI inference server status.\n\n"
+                f"`{prefix}test_ai_mod <text>`\n"
+                "Test AI moderation on text.\n\n"
+                f"`{prefix}ai_mod_help`\n"
+                "Show detailed AI moderation help.\n\n"
+                "⚠️ **Note:** This is an experimental feature that uses machine learning. "
+                "It may produce false positives or negatives."
+            ),
+            inline=False,
+        )
+
+        embed_help.add_field(
             name="Warning System",
             value=(
                 f"`{prefix}warnings <@user|user_id>`\n"
                 "View warnings for a user.\n\n"
-                f"`{prefix}delwarn <@user|user_id> <index>`\n"
+                f"{prefix}delwarn <@user|user_id> <index>`\n"
                 "Delete one warning by index."
             ),
             inline=False,

@@ -33,19 +33,21 @@ async def on_ready():
         log(f"System online as {user} ({user.id})", "success")
     log(f"Connected to {len(client.guilds)} guilds.", "info")
     
-    # Start LHS server if not already running
-    if not lhs_manager.is_running():
+    # Start LHS server if not already running (and not using external server)
+    lhs_server_url = os.environ.get("LHS_SERVER_URL", "")
+    is_external = lhs_server_url and not any(local in lhs_server_url for local in ["localhost", "127.0.0.1", "0.0.0.0"])
+    
+    if not is_external and not lhs_manager.is_running():
         log("[LHS] Auto-starting inference server...", "info")
-        started = await lhs_manager.start(wait_for_ready=True, timeout=60.0)
+        started = await lhs_manager.start(wait_for_ready=True, timeout=120.0)
         if started:
             log(f"[LHS] Inference server ready at {lhs_manager.server_url}", "success")
-            # Set environment variable for the client
-            os.environ["LHS_SERVER_URL"] = lhs_manager.server_url
         else:
             log("[LHS] Failed to start inference server - AI moderation will be unavailable", "warn")
+    elif is_external:
+        log(f"[LHS] Using external inference server at {lhs_server_url}", "info")
     else:
         log(f"[LHS] Inference server already running at {lhs_manager.server_url}", "info")
-        os.environ["LHS_SERVER_URL"] = lhs_manager.server_url
 
 
 async def load_cogs():

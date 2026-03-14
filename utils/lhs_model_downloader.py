@@ -77,7 +77,7 @@ def download_model(
     for try_url in urls_to_try:
         try:
             print(f"[LHS Downloader] Downloading model from {try_url}...")
-            print(f"[LHS Downloader] This may take a few minutes (approx 109MB)...")
+            print(f"[LHS Downloader] This may take a few minutes (approx 109MB)...", flush=True)
             
             # Create request with headers
             headers = {
@@ -92,6 +92,7 @@ def download_model(
                 # Download in chunks
                 chunk_size = 8192
                 downloaded = 0
+                last_printed_mb = 0
                 
                 with open(model_path, 'wb') as f:
                     while True:
@@ -106,13 +107,15 @@ def download_model(
                             progress_callback(downloaded, total_size)
                         
                         # Print progress every 10MB
-                        if downloaded % (10 * 1024 * 1024) < chunk_size:
+                        current_mb = downloaded // (10 * 1024 * 1024)
+                        if current_mb > last_printed_mb:
+                            last_printed_mb = current_mb
                             mb = downloaded / (1024 * 1024)
                             if total_size:
                                 pct = (downloaded / total_size) * 100
-                                print(f"[LHS Downloader] Downloaded: {mb:.1f}MB ({pct:.1f}%)")
+                                print(f"[LHS Downloader] Downloaded: {mb:.1f}MB ({pct:.1f}%)", flush=True)
                             else:
-                                print(f"[LHS Downloader] Downloaded: {mb:.1f}MB")
+                                print(f"[LHS Downloader] Downloaded: {mb:.1f}MB", flush=True)
             
             # Verify download
             actual_size = model_path.stat().st_size
@@ -120,14 +123,14 @@ def download_model(
                 model_path.unlink()  # Delete partial/corrupt file
                 raise ModelDownloadError(f"Downloaded file too small ({actual_size} bytes)")
             
-            print(f"[LHS Downloader] Download complete: {model_path}")
-            print(f"[LHS Downloader] File size: {actual_size / (1024*1024):.1f}MB")
+            print(f"[LHS Downloader] Download complete: {model_path}", flush=True)
+            print(f"[LHS Downloader] File size: {actual_size / (1024*1024):.1f}MB", flush=True)
             
             return model_path
         
         except Exception as e:
             last_error = e
-            print(f"[LHS Downloader] Failed to download from {try_url}: {e}")
+            print(f"[LHS Downloader] Failed to download from {try_url}: {e}", flush=True)
             # Clean up partial download
             if model_path.exists():
                 model_path.unlink()

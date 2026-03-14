@@ -21,12 +21,12 @@ class LHSServerManager:
     """
     Manages the LHS inference server as a subprocess.
     
-    The server is started automatically and runs on localhost:8000 by default.
+    The server is started automatically and runs on localhost:9000 by default.
     Environment variables can override the host/port.
     """
     
     DEFAULT_HOST = "127.0.0.1"
-    DEFAULT_PORT = 8000
+    DEFAULT_PORT = 9000
     DEFAULT_MODEL_PATH = "LHS"
     DEFAULT_DEVICE = "cpu"
     DEFAULT_MAX_BATCH_SIZE = 32
@@ -118,8 +118,11 @@ class LHSServerManager:
             log("[LHS Manager] Server is already running", "info")
             return True
         
-        # Check/download model if needed
-        if auto_download_model and not model_exists():
+        # Check/download model if needed (skip if LHS_SERVER_URL points to external server)
+        external_server = os.environ.get("LHS_SERVER_URL", "").replace("http://", "").replace("https://", "")
+        is_local = "localhost" in external_server or "127.0.0.1" in external_server or not external_server
+        
+        if is_local and auto_download_model and not model_exists():
             log("[LHS Manager] Model not found locally, downloading...", "info")
             try:
                 await ensure_model_async()

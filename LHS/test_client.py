@@ -9,7 +9,7 @@ import concurrent.futures
 import sys
 from typing import List
 
-SERVER_URL = "http://localhost:8000"
+SERVER_URL = "http://localhost:9000"
 
 
 def test_health():

@@ -237,7 +237,7 @@ class GuildLHSSettings:
 class LHSClient:
     """Async HTTP client for LHS inference server"""
     
-    DEFAULT_URL = "http://127.0.0.1:8000"
+    DEFAULT_URL = "http://127.0.0.1:9000"
     
     def __init__(self, base_url: Optional[str] = None, timeout: float = 10.0):
         self.base_url = base_url or os.environ.get("LHS_SERVER_URL") or self.DEFAULT_URL

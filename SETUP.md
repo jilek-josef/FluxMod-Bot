@@ -12,7 +12,7 @@
 
 ```bash
 cd FluxMod-Bot
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### 2. Environment Variables
@@ -22,7 +22,7 @@ Create a `.env` file:
 ```env
 TOKEN=your_discord_bot_token
 MONGO_URI=your_mongodb_uri
-# Optional: LHS_SERVER_URL=http://127.0.0.1:8000
+# Optional: LHS_SERVER_URL=http://127.0.0.1:9000
 ```
 
 ### 3. LHS Model (AI Moderation)
@@ -55,7 +55,7 @@ Environment variables for LHS (all optional):
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LHS_HOST` | 127.0.0.1 | Server bind address |
-| `LHS_PORT` | 8000 | Server port |
+| `LHS_PORT` | 9000 | Server port |
 | `LHS_DEVICE` | cpu | Device (cpu/cuda) |
 | `LHS_MAX_BATCH_SIZE` | 32 | Max batch size |
 
@@ -69,6 +69,6 @@ Environment variables for LHS (all optional):
 
 ### LHS Server Won't Start
 
-- Check port 8000 is not in use
-- Try different port: `LHS_PORT=8001 python bot.py`
+- Check port 9000 is not in use
+- Try different port: `LHS_PORT=9001 python bot.py`
 - Check model file exists and is ~109MB

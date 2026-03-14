@@ -11,7 +11,7 @@ from typing import List, Tuple
 import time
 
 # Default server URL
-DEFAULT_SERVER_URL = "http://localhost:8000"
+DEFAULT_SERVER_URL = "http://localhost:9000"
 
 
 # Label descriptions for UI (using text instead of emoji for compatibility)
@@ -214,7 +214,7 @@ def create_ui():
                     server_url_single = gr.Textbox(
                         value=DEFAULT_SERVER_URL,
                         label="Server URL",
-                        placeholder="http://localhost:8000"
+                        placeholder="http://localhost:9000"
                     )
                     text_input = gr.Textbox(
                         label="Enter text to analyze",
@@ -283,7 +283,7 @@ def create_ui():
                     server_url_batch = gr.Textbox(
                         value=DEFAULT_SERVER_URL,
                         label="Server URL",
-                        placeholder="http://localhost:8000"
+                        placeholder="http://localhost:9000"
                     )
                     batch_input = gr.Textbox(
                         label="Enter texts (one per line)",
