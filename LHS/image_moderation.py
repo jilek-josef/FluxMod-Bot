@@ -7,18 +7,14 @@ Model: animetimm_caformer_b36.dbv4-full_Quantized_Q8
 
 import os
 import io
-import asyncio
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
-from pathlib import Path
 
 import torch
 import numpy as np
 from PIL import Image
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
-from PIL import Image
-import torch
 try:
     import cv2
     CV2_AVAILABLE = True
@@ -167,13 +163,13 @@ class ImageModerationModel:
         start_time = time.time()
         
         try:
-            print(f"[Image Moderation] Starting model load...", flush=True)
+            print("[Image Moderation] Starting model load...", flush=True)
             
             if not os.path.exists(self.model_path):
                 print(f"[Image Moderation] Model not found at {self.model_path}", flush=True)
                 return False
             
-            print(f"[Image Moderation] Importing dependencies...", flush=True)
+            print("[Image Moderation] Importing dependencies...", flush=True)
             import timm
             from hqq.core.quantize import HQQLinear, BaseQuantizeConfig
             from safetensors.torch import load_file
@@ -187,7 +183,7 @@ class ImageModerationModel:
                     self.config = json.load(f)
             
             # Create model with timm
-            print(f"[Image Moderation] Creating model architecture...", flush=True)
+            print("[Image Moderation] Creating model architecture...", flush=True)
             t0 = time.time()
             self.model = timm.create_model(
                 "caformer_b36",
@@ -197,7 +193,7 @@ class ImageModerationModel:
             print(f"[Image Moderation] Model created in {time.time() - t0:.1f}s", flush=True)
             
             # Setup HQQ quantization config
-            print(f"[Image Moderation] Setting up HQQ quantization...", flush=True)
+            print("[Image Moderation] Setting up HQQ quantization...", flush=True)
             t0 = time.time()
             quant_config = BaseQuantizeConfig(
                 nbits=8,

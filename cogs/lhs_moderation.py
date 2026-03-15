@@ -349,7 +349,6 @@ class LHSModerationCog(Cog):
             return
         
         violations = result.get_top_violations()
-        violation_names = [v["display_name"] for v in violations]
         violation_details = "\n".join([
             f"• **{v['display_name']}** ({v['confidence']:.1%})"
             for v in violations
@@ -511,7 +510,7 @@ class LHSModerationCog(Cog):
                     log(f"[Image Mod] Downloaded {len(image_data)} bytes", "debug")
                     
                     if len(image_data) == 0:
-                        log(f"[Image Mod] Empty image data", "warning")
+                        log("[Image Mod] Empty image data", "warning")
                         return
                     
                     # Build thresholds dict for enabled filters only
@@ -527,7 +526,7 @@ class LHSModerationCog(Cog):
                     print(f"[Image Mod] API result: {result}")
                     
                     if not result:
-                        log(f"[Image Mod] Moderation API returned no result", "warning")
+                        log("[Image Mod] Moderation API returned no result", "warning")
                         return
                     
                     log(f"[Image Mod] API result: is_nsfw={result.get('is_nsfw')}, "
@@ -546,9 +545,8 @@ class LHSModerationCog(Cog):
                         "csam_check": result.get("potential_csam", False),
                     }
                     
-                    # For NSFW categories, check content_rating and logits
+                    # For NSFW categories, check content_rating
                     content_rating = result.get("content_rating", "safe")
-                    logits = result.get("logits", {})
                     
                     # Map content ratings to our filters
                     rating_to_filter = {
@@ -576,7 +574,7 @@ class LHSModerationCog(Cog):
                     log(f"[Image Mod] Triggered filters: {triggered_filters}", "info")
                     
                     if not triggered_filters:
-                        log(f"[Image Mod] No violations detected for image", "debug")
+                        log("[Image Mod] No violations detected for image", "debug")
                         return
                     
                     # Determine the most severe triggered filter
@@ -596,14 +594,12 @@ class LHSModerationCog(Cog):
     async def _take_image_action(self, message: fluxer.Message, filter_id: str, confidence: float,
                                   action: str, source_type: str, filename: str, settings: GuildLHSSettings):
         """Take action on a violating image"""
-        guild_id = message.guild.id if message.guild else None
-        
         log(f"[Image Mod] Taking action '{action}' for filter '{filter_id}' on msg={message.id}", "info")
         
         # Check log only mode
         img_settings = settings.image_moderation or {}
         if img_settings.get("log_only_mode", False):
-            log(f"[Image Mod] Log only mode - not taking action", "info")
+            log("[Image Mod] Log only mode - not taking action", "info")
             action = "log_only"
         
         action_result = "unknown"
@@ -612,7 +608,7 @@ class LHSModerationCog(Cog):
             if action == "delete":
                 await message.delete()
                 action_result = "deleted"
-                log(f"[Image Mod] Message deleted", "info")
+                log("[Image Mod] Message deleted", "info")
                 
                 # Send warning
                 if message.channel:
@@ -630,12 +626,12 @@ class LHSModerationCog(Cog):
             elif action == "kick":
                 await message.guild.kick(message.author, reason=f"AI Image Moderation: {filter_id}")
                 action_result = "kicked"
-                log(f"[Image Mod] User kicked", "info")
+                log("[Image Mod] User kicked", "info")
                 
             elif action == "ban":
                 await message.guild.ban(message.author, reason=f"AI Image Moderation: {filter_id}")
                 action_result = "banned"
-                log(f"[Image Mod] User banned", "info")
+                log("[Image Mod] User banned", "info")
                 
             elif action == "log_only":
                 action_result = "log_only"

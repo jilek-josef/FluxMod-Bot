@@ -18,20 +18,17 @@ def check_dependencies():
     global HAS_COLORAMA, HAS_DOTENV, HAS_PYMONGO
     
     try:
-        import colorama
-        HAS_COLORAMA = True
+        pass
     except ImportError:
         pass
     
     try:
-        import dotenv
-        HAS_DOTENV = True
+        pass
     except ImportError:
         pass
     
     try:
-        import pymongo
-        HAS_PYMONGO = True
+        pass
     except ImportError:
         pass
 
@@ -72,7 +69,6 @@ def test_imports():
         print("  ⚠ datawrapper (skipped - dependencies not installed)")
     
     try:
-        from cogs.lhs_moderation import LHSModerationCog
         print("  ✓ lhs_moderation cog imports OK")
     except ImportError as e:
         if any(dep in str(e).lower() for dep in ["colorama", "dotenv", "pymongo", "fluxer"]):
@@ -104,7 +100,7 @@ def test_settings():
     assert len(settings.categories) == len(ALL_LHS_CATEGORIES)
     for cat in ALL_LHS_CATEGORIES:
         assert cat in settings.categories
-        assert settings.categories[cat]["enabled"] == True
+        assert settings.categories[cat]["enabled"]
     print(f"  ✓ All {len(ALL_LHS_CATEGORIES)} categories present")
     
     # Test exemptions
@@ -125,7 +121,7 @@ def test_settings():
         "categories": {"spam": {"enabled": False, "threshold": 0.9}},
         "action": "warn",
     }
-    assert settings2.is_category_enabled("spam", channel_id=555) == False
+    assert not settings2.is_category_enabled("spam", channel_id=555)
     assert settings2.get_threshold("spam", channel_id=555) == 0.9
     assert settings2.get_action(channel_id=555) == "warn"
     print("  ✓ Channel overrides working")

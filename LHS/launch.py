@@ -106,7 +106,7 @@ def main():
                             p.terminate()
                             try:
                                 p.wait(timeout=5)
-                            except:
+                            except Exception:
                                 p.kill()
                     return ret
             time.sleep(0.5)
@@ -119,7 +119,7 @@ def main():
                 proc.terminate()
                 try:
                     proc.wait(timeout=5)
-                except:
+                except Exception:
                     proc.kill()
         print("Done!")
 

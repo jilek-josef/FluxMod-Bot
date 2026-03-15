@@ -576,26 +576,6 @@ def reset_lhs_client():
     """Reset the global client (useful for testing)"""
     global _lhs_client
     _lhs_client = None
-# ... (existing content remains the same)
-
-# Global client instance
-_lhs_client: Optional[LHSClient] = None
-
-
-def get_lhs_client() -> LHSClient:
-    """Get or create global LHS client"""
-    global _lhs_client
-    if _lhs_client is None:
-        _lhs_client = LHSClient()
-    return _lhs_client
-
-
-def reset_lhs_client():
-    """Reset the global client (useful for testing)"""
-    global _lhs_client
-    _lhs_client = None
-
-
 # Image moderation client
 _image_client: Optional["ImageModerationClient"] = None
 

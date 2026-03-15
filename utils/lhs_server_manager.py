@@ -301,26 +301,6 @@ def reset_lhs_server_manager():
     """Reset the global manager (useful for testing)"""
     global _lhs_manager
     _lhs_manager = None
-# ... (existing content remains the same)
-
-# Global manager instance
-_lhs_manager: Optional[LHSServerManager] = None
-
-
-def get_lhs_server_manager() -> LHSServerManager:
-    """Get or create global LHS server manager"""
-    global _lhs_manager
-    if _lhs_manager is None:
-        _lhs_manager = LHSServerManager()
-    return _lhs_manager
-
-
-def reset_lhs_server_manager():
-    """Reset the global manager (useful for testing)"""
-    global _lhs_manager
-    _lhs_manager = None
-
-
 class ImageModerationServerManager:
     """
     Manages the image moderation inference server as a subprocess.
@@ -397,7 +377,7 @@ class ImageModerationServerManager:
             env = os.environ.copy()
             env["PYTHONUNBUFFERED"] = "1"
             
-            log(f"[Image Manager] Creating subprocess...", "debug")
+            log("[Image Manager] Creating subprocess...", "debug")
             self.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -423,7 +403,7 @@ class ImageModerationServerManager:
                 return False
             
             # Start log streaming task immediately
-            log(f"[Image Manager] Starting log streamer...", "debug")
+            log("[Image Manager] Starting log streamer...", "debug")
             asyncio.create_task(self._stream_logs())
             
             # Start monitor task
@@ -496,7 +476,6 @@ class ImageModerationServerManager:
                 
                 # Read line without blocking
                 import select
-                import os
                 
                 fd = self.process.stdout.fileno()
                 if fd < 0:

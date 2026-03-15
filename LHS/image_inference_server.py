@@ -288,7 +288,7 @@ class ImageBatchingInferenceEngine:
         
         try:
             results = await loop.run_in_executor(self.executor, _infer_batch)
-            elapsed = (time.perf_counter() - start) * 1000
+            _elapsed = (time.perf_counter() - start) * 1000
             
             # Update stats
             self.stats['total_batches'] += 1
@@ -357,13 +357,13 @@ async def lifespan(app: FastAPI):
     print("=" * 60, flush=True)
     
     start_time = time.time()
-    print(f"[Lifespan] Getting image model...", flush=True)
+    print("[Lifespan] Getting image model...", flush=True)
     model = get_image_model(device=device)
     if model_path:
         model.model_path = model_path
     print(f"[Lifespan] Got model in {time.time() - start_time:.1f}s", flush=True)
     
-    print(f"[Lifespan] Loading model (this may take a while)...", flush=True)
+    print("[Lifespan] Loading model (this may take a while)...", flush=True)
     t0 = time.time()
     loaded = model.load_model()
     print(f"[Lifespan] Model.load_model() returned in {time.time() - t0:.1f}s", flush=True)

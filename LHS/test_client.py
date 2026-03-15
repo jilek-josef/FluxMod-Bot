@@ -48,7 +48,6 @@ def test_predict(text: str, threshold: float = 0.5):
         result = response.json()
         print(f"  Time: {elapsed:.2f}ms (inference: {result.get('inference_time_ms', 0):.2f}ms)")
         
-        logits = result.get('logits', [])
         probs = result.get('probabilities', [])
         
         # Apply threshold client-side
@@ -57,7 +56,7 @@ def test_predict(text: str, threshold: float = 0.5):
                        'phish', 'spam']
         
         detected = []
-        for i, (name, prob) in enumerate(zip(label_names, probs)):
+        for name, prob in zip(label_names, probs):
             if prob >= threshold:
                 detected.append(name)
         
@@ -102,11 +101,6 @@ def test_predict_batch(texts: List[str], threshold: float = 0.5):
         print(f"  Total time: {elapsed:.2f}ms")
         print(f"  Throughput: {len(texts) / (elapsed/1000):.1f} texts/sec")
         
-        # Count harmful based on threshold applied client-side
-        label_names = ['dangerous_content', 'hate_speech', 'harassment', 'sexually_explicit',
-                       'toxicity', 'severe_toxicity', 'threat', 'insult', 'identity_attack',
-                       'phish', 'spam']
-        
         harmful_count = 0
         for r in result['results']:
             probs = r.get('probabilities', [])
@@ -144,7 +138,7 @@ def test_concurrent(num_requests: int = 50):
                 timeout=30
             )
             return response.status_code == 200
-        except:
+        except Exception:
             return False
     
     start = time.time()

@@ -227,17 +227,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\nFailed: {e}")
         sys.exit(1)
-# ... (existing content remains the same)
 
-async def ensure_model_async() -> Path:
-    """Async version of ensure_model"""
-    model_path = get_model_path()
-    
-    if model_exists():
-        return model_path
-    
-    print("[LHS] Model not found locally, downloading...")
-    return await download_model_async()
 
 
 # ============================================================================
@@ -338,7 +328,7 @@ def download_image_model(
         print(f"[Image Downloader] Model download complete: {model_path}", flush=True)
         
         # Download config
-        print(f"[Image Downloader] Downloading config...")
+        print("[Image Downloader] Downloading config...")
         config_request = urllib.request.Request(IMAGE_CONFIG_URL, headers=headers)
         with urllib.request.urlopen(config_request, timeout=60) as response:
             with open(config_path, 'wb') as f:
